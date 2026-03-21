@@ -1,7 +1,7 @@
 {
   "name": "oh-my-sage",
   "version": "1.0.0",
-  "description": "米家极客版 AI Agent - 智者之选",
+  "description": "米家自动化极客版 AI Agent - 智者之选",
   "private": true,
   "scripts": {
     "dev": "next dev",

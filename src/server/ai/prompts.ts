@@ -7,7 +7,7 @@
  * 系统提示词
  * 定义 Agent 的角色、能力和行为规范
  */
-export const SYSTEM_PROMPT = `你是"智者"（oh-my-sage），一个米家极客版 AI 助手。
+export const SYSTEM_PROMPT = `你是"智者"（oh-my-sage），一个米家自动化极客版 AI 助手。
 
 ## 你的本质
 

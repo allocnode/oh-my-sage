@@ -113,7 +113,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
         <div style={{ marginBottom: 32 }}>
           <RobotOutlined style={{ fontSize: 48, color: '#1890ff', marginBottom: 16 }} />
           <h1 style={{ margin: '16px 0 8px', fontSize: 24 }}>Oh My Sage</h1>
-          <p style={{ color: '#666', margin: 0 }}>米家极客版 AI Agent</p>
+          <p style={{ color: '#666', margin: 0 }}>米家自动化极客版 AI Agent</p>
         </div>
 
         <div style={{ marginBottom: 24 }}>

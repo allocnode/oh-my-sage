@@ -266,7 +266,7 @@ export default function HomePage() {
             Oh My Sage
           </Title>
           <Text type="secondary">
-            米家极客版 AI Agent
+            米家自动化极客版 AI Agent
           </Text>
           <Text type="success" style={{ marginLeft: 16 }}>
             已连接 | 设备: {stats.online}/{stats.total} 在线

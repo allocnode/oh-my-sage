@@ -418,7 +418,7 @@ export default function Chat({
           <div style={{ textAlign: 'center', padding: 40 }}>
             <RobotOutlined style={{ fontSize: 48, color: '#1890ff' }} />
             <Text style={{ display: 'block', fontSize: 18, marginTop: 16 }}>你好！我是智者</Text>
-            <Text type="secondary">米家极客版 AI 助手</Text>
+            <Text type="secondary">米家自动化极客版 AI 助手</Text>
             <div style={{ marginTop: 24 }}>
               <Button onClick={() => sendMessage('帮我查看设备状态')} style={{ marginBottom: 8 }}>查看设备</Button><br/>
               <Button onClick={() => sendMessage('帮我创建自动化规则')}>创建规则</Button>

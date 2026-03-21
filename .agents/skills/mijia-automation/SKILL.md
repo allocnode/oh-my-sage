@@ -1,6 +1,6 @@
 ---
 name: mijia-automation
-description: 米家极客版规则创建指南。当用户想要创建智能场景、设备联动、定时任务、条件触发等自动化规则时使用此skill。
+description: 米家自动化极客版规则创建指南。当用户想要创建智能场景、设备联动、定时任务、条件触发等自动化规则时使用此skill。
 metadata:
   author: oh-my-sage
   version: "1.0"

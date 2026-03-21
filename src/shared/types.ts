@@ -1,5 +1,5 @@
 /**
- * oh-my-sage - 米家极客版 AI Agent
+ * oh-my-sage - 米家自动化极客版 AI Agent
  * 共享类型定义
  */
 

@@ -16740,7 +16740,7 @@
                             window.open("https://www.google.cn/intl/zh-CN/chrome/")
                         }
                     }, "去下载")]
-                }, "建议您使用 107 及以上版本的 Chrome / Edge 浏览器"), o.createElement("div", {className: "account-content absolute-center"}, o.createElement("div", {className: "account-title"}, "米家极客版"), o.createElement("div", {className: "account-box-title"}, "输入 ", 6, " 位数字登录码"), o.createElement(_d, {onSuccess: Py}), o.createElement("div", {className: "account-tip"}, o.createElement("p", null, "无论输入的登录码是否正确，再次输入都需要重新获取登录码"), o.createElement("p", null, "刷新页面也会导致登录码失效，需要重新获取"))))
+                }, "建议您使用 107 及以上版本的 Chrome / Edge 浏览器"), o.createElement("div", {className: "account-content absolute-center"}, o.createElement("div", {className: "account-title"}, "米家自动化极客版"), o.createElement("div", {className: "account-box-title"}, "输入 ", 6, " 位数字登录码"), o.createElement(_d, {onSuccess: Py}), o.createElement("div", {className: "account-tip"}, o.createElement("p", null, "无论输入的登录码是否正确，再次输入都需要重新获取登录码"), o.createElement("p", null, "刷新页面也会导致登录码失效，需要重新获取"))))
             };
             T().isSystem && n.e(769).then(n.bind(n, 65769)), T().isDark ? n.e(888).then(n.bind(n, 62888)) : n.e(302).then(n.bind(n, 88302)), R().locale("zh-cn"), (0, c.j6)({dsn: "https://4734ea6d82b14d26b9c6704a0d209256@sentry.d.xiaomi.net/1257"});
             var By = (0, D.s)(document.getElementById("app"));
