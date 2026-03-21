@@ -71,35 +71,20 @@ npm run dev
 
 访问 http://localhost:3000
 
-### 方式二：自动化脚本
+### 方式二：让 AI Agent 帮你安装
 
-使用安装脚本自动完成配置：
-
-```bash
-# 下载并运行安装脚本
-curl -fsSL https://raw.githubusercontent.com/Vinci-9527/oh-my-sage/main/scripts/install.sh | bash
-```
-
-脚本会引导你完成：
-1. 克隆项目
-2. 安装依赖
-3. 选择 LLM 模型
-4. 配置环境变量
-5. 启动服务
-
-### 方式三：LLM Agent 辅助安装
-
-将以下内容发送给你的 AI 助手：
+如果你在使用 OpenCode、Claude Code 等 AI 编程助手，直接告诉它：
 
 ```
-请帮我安装 oh-my-sage，按照以下步骤：
-1. 克隆仓库: git clone https://github.com/Vinci-9527/oh-my-sage.git
-2. 进入目录: cd oh-my-sage
-3. 安装依赖: npm install
-4. 复制配置: cp .env.example .env
-5. 提示我填写 API Key 和网关地址
-6. 启动服务: npm run dev
+帮我安装 oh-my-sage: https://github.com/Vinci-9527/oh-my-sage
+
+我需要：
+1. LLM 模型：qwen-max（或 kimi-128k / deepseek-chat / gpt-4o / claude-3.5-sonnet）
+2. API Key：你的key
+3. 米家网关地址：http://192.168.0.5（改成你的）
 ```
+
+Agent 会自动完成克隆、安装、配置和启动。
 
 ### 使用
 
