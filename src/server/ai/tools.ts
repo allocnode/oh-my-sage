@@ -6,8 +6,7 @@
 import { z } from 'zod';
 import { tool } from 'ai';
 import { GatewayClient } from '../gateway/client';
-import { SuggestionGenerator } from '../agent/suggestions';
-import { Device, Intent } from '../../shared/types';
+import { Device } from '../../shared/types';
 import { ModelConfig, getModelConfigFromEnv } from './model';
 import { getSkillByName, formatSkillContent, readSkillFile, getSkillCatalog } from '../skills/loader';
 
@@ -20,7 +19,6 @@ import { getSkillByName, formatSkillContent, readSkillFile, getSkillCatalog } fr
  */
 export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelConfig) {
   const config = modelConfig || getModelConfigFromEnv();
-  const suggestionGenerator = new SuggestionGenerator(config);
   
   return {
     // ==================== 思考工具 ====================
@@ -86,6 +84,11 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
             model: device.model,
             modelName: device.modelName,
             online: device.online,
+            specV2Access: device.specV2Access,
+            specV3Access: device.specV3Access,
+            pushAvailable: device.pushAvailable,
+            urn: device.urn,
+            roomId: device.roomId,
             roomName: device.roomName,
             icon: device.icon,
           }));
@@ -130,7 +133,13 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
               model: device.model,
               modelName: device.modelName,
               online: device.online,
+              specV2Access: device.specV2Access,
+              specV3Access: device.specV3Access,
+              pushAvailable: device.pushAvailable,
+              urn: device.urn,
+              roomId: device.roomId,
               roomName: device.roomName,
+              icon: device.icon,
             }));
           
           return {
@@ -176,6 +185,7 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
               model: device.model,
               modelName: device.modelName,
               online: device.online,
+              roomId: device.roomId,
               roomName: device.roomName,
               urn: device.urn,
               icon: device.icon,
@@ -183,15 +193,151 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
               specV3Access: device.specV3Access,
               pushAvailable: device.pushAvailable,
             },
-          };
-        } catch (error) {
-          return {
-            success: false,
-            error: `获取设备详情失败: ${error}`,
-          };
-        }
-      },
-    }),
+            };
+          } catch (error) {
+            return {
+              success: false,
+              error: `获取设备详情失败: ${error}`,
+            };
+          }
+        },
+      }),
+
+      /**
+       * 获取设备 MIOT Spec 详细能力
+       * 通过 URN 从 miot-spec.org 获取设备的完整服务、属性、事件、动作定义
+       */
+      'get_device_spec': tool({
+        description: '获取设备的 MIOT Spec 详细能力信息，包括所有服务、属性、事件和动作定义。创建规则前需要调用此工具获取设备的 siid/piid/eiid/aiid 等能力信息。',
+        parameters: z.object({
+          urn: z.string().describe('设备 URN，如 urn:miot-spec-v2:device:light:0000A001:xiaomi-btlm2p:2'),
+        }),
+        execute: async ({ urn }) => {
+          try {
+            const url = `https://miot-spec.org/miot-spec-v2/instance?type=${encodeURIComponent(urn)}`;
+            const response = await fetch(url);
+            
+            if (!response.ok) {
+              return {
+                success: false,
+                error: `获取设备 Spec 失败: HTTP ${response.status}`,
+              };
+            }
+            
+            const data = await response.json() as any;
+            
+            // 解析服务能力
+            const services = (data.services || []).map((service: any) => ({
+              siid: service.iid,
+              type: service.type,
+              description: service.description,
+              properties: (service.properties || []).map((prop: any) => ({
+                piid: prop.iid,
+                type: prop.type,
+                description: prop.description,
+                dtype: prop.format,
+                access: prop.access,
+                valueRange: prop['value-range'],
+                valueList: prop['value-list'],
+              })),
+              events: (service.events || []).map((event: any) => ({
+                eiid: event.iid,
+                type: event.type,
+                description: event.description,
+                arguments: event.arguments,
+              })),
+              actions: (service.actions || []).map((action: any) => ({
+                aiid: action.iid,
+                type: action.type,
+                description: action.description,
+                in: action.in,
+              })),
+            }));
+
+            // 提取可触发能力（用于 deviceInput）
+            const triggers = services.flatMap((s: any) => {
+              const result: any[] = [];
+              // 属性上报（notify）
+              s.properties?.filter((p: any) => p.access?.includes('notify')).forEach((p: any) => {
+                result.push({
+                  type: 'propertyNotify',
+                  siid: s.siid,
+                  piid: p.piid,
+                  description: `${s.description} - ${p.description}`,
+                  dtype: p.dtype,
+                });
+              });
+              // 事件
+              s.events?.forEach((e: any) => {
+                result.push({
+                  type: 'event',
+                  siid: s.siid,
+                  eiid: e.eiid,
+                  description: `${s.description} - ${e.description}`,
+                  arguments: e.arguments,
+                });
+              });
+              return result;
+            });
+
+            // 提取可执行能力（用于 deviceOutput）
+            const actions = services.flatMap((s: any) => {
+              const result: any[] = [];
+              // 属性设置（write）
+              s.properties?.filter((p: any) => p.access?.includes('write')).forEach((p: any) => {
+                result.push({
+                  type: 'propertySet',
+                  siid: s.siid,
+                  piid: p.piid,
+                  description: `${s.description} - ${p.description}`,
+                  dtype: p.dtype,
+                  valueRange: p.valueRange,
+                  valueList: p.valueList,
+                });
+              });
+              // 动作
+              s.actions?.forEach((a: any) => {
+                result.push({
+                  type: 'action',
+                  siid: s.siid,
+                  aiid: a.aiid,
+                  description: `${s.description} - ${a.description}`,
+                  in: a.in,
+                });
+              });
+              return result;
+            });
+
+            // 提取可查询能力（用于 deviceGet）
+            const readable = services.flatMap((s: any) =>
+              (s.properties || [])
+                .filter((p: any) => p.access?.includes('read'))
+                .map((p: any) => ({
+                  siid: s.siid,
+                  piid: p.piid,
+                  description: `${s.description} - ${p.description}`,
+                  dtype: p.dtype,
+                }))
+            );
+
+            return {
+              success: true,
+              urn,
+              description: data.description,
+              services,
+              triggers,
+              actions,
+              readable,
+              message: `设备包含 ${services.length} 个服务，${triggers.length} 个触发能力，${actions.length} 个执行能力`,
+            };
+          } catch (error) {
+            return {
+              success: false,
+              error: `获取设备 Spec 失败: ${error}`,
+            };
+          }
+        },
+      }),
     
     // ==================== 规则相关工具 ====================
     
@@ -210,8 +356,9 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
             graphs: graphList.map((graph: any) => ({
               id: graph.id,
               name: graph.userData?.name || graph.id,
-              enable: graph.enable,
-              lastUpdateTime: graph.userData?.lastUpdateTime,
+              enabled: graph.enable,
+              createTime: graph.createTime,
+              updateTime: graph.userData?.lastUpdateTime,
             })),
             count: graphList.length,
           };
@@ -252,7 +399,7 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
      * 创建规则
      */
     'create_graph': tool({
-      description: '创建新的自动化规则。创建前请先使用 generate_suggestions 生成方案并获得用户确认。',
+      description: '创建新的自动化规则。创建前请先获取设备信息，生成方案并获得用户确认。',
       parameters: z.object({
         name: z.string().describe('规则名称'),
         nodes: z.array(z.any()).describe('节点列表'),
@@ -261,13 +408,25 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
       execute: async ({ name, nodes, enable = true }) => {
         try {
           const graphId = `graph_${Date.now()}`;
+          
+          // 处理节点：确保每个节点的 cfg 和 props 包含必要字段
+          const processedNodes = nodes.map((node: any) => ({
+            ...node,
+            cfg: {
+              ...node.cfg,
+              name: node.cfg?.name || node.type,
+              version: node.cfg?.version ?? 1,
+            },
+            props: node.props || {},  // props 必须存在，可以为空对象
+          }));
+          
           const graph: any = {
             id: graphId,
-            nodes: nodes,
+            nodes: processedNodes,
             cfg: {
               id: graphId,
               enable,
-              uiType: 'automation',
+              uiType: 'graph',
               userData: {
                 name,
                 lastUpdateTime: Date.now(),
@@ -314,13 +473,25 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
             ? graphList.find((g: any) => g.id === id)
             : null;
 
+          // 处理节点：确保每个节点的 cfg 和 props 包含必要字段
+          const inputNodes = nodes || existing.nodes;
+          const processedNodes = inputNodes.map((node: any) => ({
+            ...node,
+            cfg: {
+              ...node.cfg,
+              name: node.cfg?.name || node.type,
+              version: node.cfg?.version ?? 1,
+            },
+            props: node.props || {},  // props 必须存在，可以为空对象
+          }));
+
           const graph: any = {
             id,
-            nodes: nodes || existing.nodes,
+            nodes: processedNodes,
             cfg: {
               id,
               enable: enable !== undefined ? enable : true,
-              uiType: 'automation',
+              uiType: 'graph',
               userData: {
                 name: name || graphInfo?.userData?.name || '规则',
                 lastUpdateTime: Date.now(),
@@ -416,80 +587,19 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
       },
     }),
     
-    // ==================== 建议生成工具 ====================
-    
-    /**
-     * 生成建议方案
-     * 为用户的自动化需求生成多个实现方案
-     * 
-     * 重要：只调用一次，生成完整方案
-     */
-    'generate_suggestions': tool({
-      description: `为用户的自动化需求生成多个实现方案。
-重要规则：
-1. **只调用一次**，不要多次调用
-2. 方案必须按推荐度从高到低排序（最推荐的方案放在第一个）
-3. 第一个方案是最简单直接、最符合用户需求的方案
-4. 后续方案是更复杂但可能更有特色的方案
-5. 方案数量3个，不要太多
-6. 用户选择后直接执行，不再询问确认`,
-      parameters: z.object({
-        intent: z.object({
-          type: z.string().describe('意图类型，如 create_graph'),
-          ruleName: z.string().optional().describe('规则名称'),
-          trigger: z.object({
-            type: z.string(),
-            deviceName: z.string().optional(),
-            property: z.string().optional(),
-            operator: z.string().optional(),
-            value: z.any().optional(),
-            time: z.object({
-              hour: z.number(),
-              minute: z.number(),
-            }).optional(),
-          }).optional(),
-          actions: z.array(z.object({
-            type: z.string(),
-            deviceName: z.string().optional(),
-            action: z.string().optional(),
-            value: z.any().optional(),
-          })).optional(),
-        }).describe('用户意图'),
-      }),
-      execute: async ({ intent }) => {
-        try {
-          // 获取设备列表
-          const deviceResponse = await gatewayClient.getDeviceList();
-          const devices = Object.values(deviceResponse.devList);
-          
-          // 使用 SuggestionGenerator 生成建议
-          const suggestions = await suggestionGenerator.generate(intent as Intent, devices);
-          
-          return {
-            success: true,
-            suggestions,
-            count: suggestions.length,
-          };
-        } catch (error) {
-          return {
-            success: false,
-            error: `生成建议失败: ${error}`,
-          };
-        }
-      },
-    }),
-    
     // ==================== 变量相关工具 ====================
     
     /**
      * 获取变量列表
      */
     'get_variables': tool({
-      description: '获取全局变量列表',
-      parameters: z.object({}),
-      execute: async () => {
+      description: '获取变量列表',
+      parameters: z.object({
+        scope: z.string().optional().describe('变量作用域，默认为"global"，可选"rule_xxx"'),
+      }),
+      execute: async ({ scope = 'global' }) => {
         try {
-          const variables = await gatewayClient.callApi('getVarList', { scope: 'global' }, 10000);
+          const variables = await gatewayClient.callApi('getVarList', { scope }, 10000);
           return {
             success: true,
             variables,
@@ -511,10 +621,11 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
       parameters: z.object({
         id: z.string().describe('变量ID'),
         value: z.union([z.string(), z.number()]).describe('变量值'),
+        scope: z.string().optional().describe('变量作用域，默认为"global"，可选"rule_xxx"'),
       }),
-      execute: async ({ id, value }) => {
+      execute: async ({ id, value, scope = 'global' }) => {
         try {
-          await gatewayClient.callApi('setVarValue', { scope: 'global', id, value }, 10000);
+          await gatewayClient.callApi('setVarValue', { scope, id, value }, 10000);
           return {
             success: true,
             message: `变量 ${id} 已更新为 ${value}`,

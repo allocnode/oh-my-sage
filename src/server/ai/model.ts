@@ -61,6 +61,14 @@ export const PRESET_MODELS: Record<string, ModelConfig> = {
     apiKey: '',
     model: 'mimo-v2-pro',
   },
+
+  'mimo-v2-omni': {
+    name: 'MiMo v2 omni (小米)',
+    provider: 'openai-compatible',
+    baseURL: 'https://api.xiaomimimo.com/v1',
+    apiKey: '',
+    model: 'mimo-v2-omni',
+  },
   
   'kimi-128k': {
     name: 'Kimi 128K',

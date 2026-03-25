@@ -59,13 +59,72 @@ export class Agent {
    */
   async loadSession(sessionId: string): Promise<void> {
     this.sessionId = sessionId;
-    const sessionMessages = await this.sessionStore.getMessages(sessionId);
+    await this.reloadMessages();
+  }
+
+  /**
+   * 从 sessionStore 重新加载消息到 messages
+   * 确保 this.messages 与 sessionStore 一致
+   */
+  private async reloadMessages(): Promise<void> {
+    if (!this.sessionId) return;
+    
+    const sessionMessages = await this.sessionStore.getMessages(this.sessionId);
 
     // 转换为 CoreMessage 格式
-    this.messages = sessionMessages.map(msg => ({
-      role: msg.role as 'user' | 'assistant',
-      content: msg.content,
-    }));
+    this.messages = [];
+    
+    for (const msg of sessionMessages) {
+      if (msg.role === 'user') {
+        // 用户消息
+        this.messages.push({
+          role: 'user',
+          content: msg.content,
+        });
+      } else if (msg.role === 'assistant') {
+        // 助手消息
+        if (msg.toolCalls && msg.toolCalls.length > 0) {
+          // 包含工具调用的消息需要分成 assistant + tool 两个消息
+          const baseId = `call_${Date.now()}`;
+          
+          // 添加 assistant 消息（包含工具调用）
+          this.messages.push({
+            role: 'assistant',
+            content: msg.toolCalls.map((tc, i) => ({
+              type: 'tool-call' as const,
+              toolCallId: tc.toolCallId || `${baseId}_${i}`,
+              toolName: tc.tool,
+              args: tc.args,
+            })),
+          });
+          
+          // 添加 tool 消息（工具结果）
+          this.messages.push({
+            role: 'tool',
+            content: msg.toolCalls.map((tc, i) => ({
+              type: 'tool-result' as const,
+              toolCallId: tc.toolCallId || `${baseId}_${i}`,
+              toolName: tc.tool,
+              result: tc.result,
+            })),
+          });
+          
+          // 如果有最终文本回复，也添加一个普通的 assistant 消息
+          if (msg.content) {
+            this.messages.push({
+              role: 'assistant',
+              content: msg.content,
+            });
+          }
+        } else {
+          // 没有工具调用的普通消息
+          this.messages.push({
+            role: 'assistant',
+            content: msg.content,
+          });
+        }
+      }
+    }
   }
 
   /**
@@ -113,6 +172,9 @@ export class Agent {
    * 返回一个异步生成器，用于流式输出
    */
   async *run(userInput?: string): AsyncGenerator<AgentOutput> {
+    // 确保 this.messages 与 sessionStore 一致
+    await this.reloadMessages();
+    
     // 添加用户输入到消息历史
     if (userInput) {
       this.messages.push({ role: 'user', content: userInput });
@@ -141,7 +203,7 @@ export class Agent {
       let needsUserInput = false;
       let waitingQuestion: string | undefined;
       let waitingOptions: string[] | undefined;
-      let currentToolCall: { tool: string; args: any } | null = null;
+      let currentToolCall: { toolCallId: string; tool: string; args: any } | null = null;
 
       for await (const chunk of result.fullStream) {
         switch (chunk.type) {
@@ -154,7 +216,11 @@ export class Agent {
 
           case 'tool-call':
             // 工具调用开始
-            currentToolCall = { tool: chunk.toolName, args: chunk.args };
+            currentToolCall = { 
+              toolCallId: chunk.toolCallId, 
+              tool: chunk.toolName, 
+              args: chunk.args 
+            };
             yield {
               type: 'tool_start',
               tool: chunk.toolName,
@@ -165,6 +231,7 @@ export class Agent {
           case 'tool-result':
             // 工具执行结果
             const toolCall: ToolCall = {
+              toolCallId: currentToolCall?.toolCallId || chunk.toolCallId,
               tool: currentToolCall?.tool || chunk.toolName,
               args: currentToolCall?.args,
               result: chunk.result,
@@ -191,8 +258,10 @@ export class Agent {
             // 一步完成
             if (needsUserInput) {
               // 需要用户输入，暂停循环
-              // 保存当前进度到 session
+              // 保存到 sessionStore（复用现有架构）
               await this.saveAssistantMessage(fullText, thinkingText, toolCalls);
+              // 从 sessionStore 重新加载，确保 this.messages 与 sessionStore 一致
+              await this.reloadMessages();
 
               yield {
                 type: 'waiting_input',
@@ -205,11 +274,10 @@ export class Agent {
 
           case 'finish':
             // 整体完成
-            if (fullText) {
-              this.messages.push({ role: 'assistant', content: fullText });
-            }
-            // 保存助手消息到 session
+            // 保存到 sessionStore（复用现有架构）
             await this.saveAssistantMessage(fullText, thinkingText, toolCalls);
+            // 从 sessionStore 重新加载，确保 this.messages 与 sessionStore 一致
+            await this.reloadMessages();
 
             yield { type: 'complete', message: fullText };
             return;
@@ -221,11 +289,10 @@ export class Agent {
       }
 
       // 如果循环结束但没有收到 finish 事件
-      if (fullText) {
-        this.messages.push({ role: 'assistant', content: fullText });
-      }
-      // 保存助手消息到 session
+      // 保存到 sessionStore
       await this.saveAssistantMessage(fullText, thinkingText, toolCalls);
+      // 从 sessionStore 重新加载
+      await this.reloadMessages();
 
       yield { type: 'complete', message: fullText };
 

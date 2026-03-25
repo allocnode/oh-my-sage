@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Input, Button, Space, Typography, Spin, message, Tag, Collapse } from 'antd';
-import { SendOutlined, ClearOutlined, LoadingOutlined, ToolOutlined, RobotOutlined } from '@ant-design/icons';
+import { Input, Button, Space, Typography, Spin, message, Tag, Collapse, Alert } from 'antd';
+import { SendOutlined, ClearOutlined, LoadingOutlined, ToolOutlined, RobotOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -22,6 +22,7 @@ interface AgentOutput {
 }
 
 interface ChatMessage {
+  id: string;
   role: 'user' | 'assistant';
   content: string;
   process?: {
@@ -43,7 +44,12 @@ interface ChatProps {
   passcode?: string;
   sessionId?: string;
   initialMessages?: SessionMessage[];
-  onSessionCreated?: (sessionId: string) => void;
+  onSessionCreated?: (sessionId: string, messages: SessionMessage[]) => void;
+}
+
+let messageIdCounter = 0;
+function generateMessageId(): string {
+  return `msg_${Date.now()}_${++messageIdCounter}`;
 }
 
 export default function Chat({ 
@@ -55,48 +61,99 @@ export default function Chat({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [waitingInput, setWaitingInput] = useState<{ question?: string; options?: string[] } | null>(null);
+  const [waitingInput, setWaitingInput] = useState<{ question: string; options: string[] } | null>(null);
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(sessionId);
+  const [isSwitchingSession, setIsSwitchingSession] = useState(false);
 
   const [streamThinking, setStreamThinking] = useState('');
   const [streamToolCalls, setStreamToolCalls] = useState<Array<{ tool: string; args?: any; result?: any; success: boolean }>>([]);
   const [streamFinalContent, setStreamFinalContent] = useState('');
 
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const passcode = propPasscode || '';
+  const prevSessionIdRef = useRef<string | undefined>(sessionId);
+  const initializedRef = useRef(false);
 
-  // 当 sessionId 变化时，更新 currentSessionId
+  // 当 sessionId 变化时，取消正在进行的请求并更新 currentSessionId
+  // 只在真正的 session 切换时才重置状态（prevSessionIdRef.current 有值时）
   useEffect(() => {
-    setCurrentSessionId(sessionId);
-  }, [sessionId]);
+    if (sessionId !== prevSessionIdRef.current) {
+      // 只有当之前有 session 时才认为是切换，需要重置状态
+      // 新创建 session 时 prevSessionIdRef.current 是 undefined，不重置
+      if (prevSessionIdRef.current !== undefined) {
+        // 取消正在进行的请求
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+          abortControllerRef.current = null;
+        }
+        
+        // 重置流式状态
+        setStreamThinking('');
+        setStreamToolCalls([]);
+        setStreamFinalContent('');
+        setWaitingInput(null);
+        
+        if (isLoading) {
+          setIsLoading(false);
+        }
+        
+        setIsSwitchingSession(true);
+      }
+      
+      setCurrentSessionId(sessionId);
+      prevSessionIdRef.current = sessionId;
+    }
+  }, [sessionId, isLoading]);
 
   // 当 initialMessages 变化时，加载历史消息
   useEffect(() => {
-    if (initialMessages && initialMessages.length > 0) {
-      const convertedMessages: ChatMessage[] = initialMessages.map(msg => ({
-        role: msg.role,
-        content: msg.content,
-        process: (msg.toolCalls && msg.toolCalls.length > 0) || msg.thinking ? {
-          toolCalls: msg.toolCalls || [],
-          thinking: msg.thinking || '',
-        } : undefined,
-      }));
-      setMessages(convertedMessages);
-    } else {
-      setMessages([]);
+    // 如果正在切换 session，等待切换完成并重置初始化标志
+    if (isSwitchingSession) {
+      setIsSwitchingSession(false);
+      initializedRef.current = false;
     }
-  }, [initialMessages, sessionId]);
+    
+    // 只在未初始化时才用 initialMessages 覆盖 messages
+    // 这样可以避免在用户发送消息后被 effect 覆盖
+    if (!initializedRef.current) {
+      if (initialMessages && initialMessages.length > 0) {
+        const convertedMessages: ChatMessage[] = initialMessages.map(msg => ({
+          id: generateMessageId(),
+          role: msg.role,
+          content: msg.content,
+          process: (msg.toolCalls && msg.toolCalls.length > 0) || msg.thinking ? {
+            toolCalls: msg.toolCalls || [],
+            thinking: msg.thinking || '',
+          } : undefined,
+        }));
+        setMessages(convertedMessages);
+        initializedRef.current = true;
+      } else if (initialMessages && initialMessages.length === 0 && !isLoading) {
+        // 只有在非加载状态下且明确为空数组时才清空
+        // 避免在流式响应期间清空消息
+        setMessages([]);
+        initializedRef.current = true;
+      }
+    }
+  }, [initialMessages, sessionId, isSwitchingSession, isLoading]);
 
   useEffect(() => {
     if (messagesContainerRef.current) {
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
     }
-  }, [messages, streamThinking, streamFinalContent]);
+  }, [messages, streamThinking, streamToolCalls, streamFinalContent, waitingInput]);
 
   const sendMessage = useCallback(async (messageText: string) => {
     if (!messageText.trim() || isLoading) return;
 
-    setMessages(prev => [...prev, { role: 'user', content: messageText }]);
+    // 创建用户消息
+    const userMessage: ChatMessage = {
+      id: generateMessageId(),
+      role: 'user',
+      content: messageText,
+    };
+    setMessages(prev => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
     setWaitingInput(null);
@@ -108,6 +165,10 @@ export default function Chat({
     setStreamToolCalls([]);
     setStreamFinalContent('');
 
+    // 创建 AbortController 用于取消请求
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -117,6 +178,7 @@ export default function Chat({
           passcode,
           sessionId: currentSessionId,
         }),
+        signal: abortController.signal,
       });
 
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -127,6 +189,12 @@ export default function Chat({
       const decoder = new TextDecoder();
 
       while (true) {
+        // 检查是否被取消
+        if (abortController.signal.aborted) {
+          reader.cancel();
+          break;
+        }
+
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -155,9 +223,17 @@ export default function Chat({
               case 'tool_result':
                 const lastIndex = currentToolCalls.length - 1;
                 if (lastIndex >= 0) {
-                  currentToolCalls[lastIndex].success = output.result?.success || false;
+                  currentToolCalls[lastIndex].success = output.result?.success !== false;
                   currentToolCalls[lastIndex].result = output.result;
                   setStreamToolCalls([...currentToolCalls]);
+                }
+                // 检查是否需要用户输入
+                const result = output.result;
+                if (result?.needsUserInput && result?.options && Array.isArray(result.options) && result.options.length > 0) {
+                  setWaitingInput({
+                    question: result.question || result.message || '请选择',
+                    options: result.options,
+                  });
                 }
                 break;
 
@@ -167,7 +243,12 @@ export default function Chat({
                 break;
 
               case 'waiting_input':
-                setWaitingInput({ question: output.question, options: output.options });
+                // 确保 options 有有效值
+                const question = output.question || '请选择';
+                const options = output.options || [];
+                if (options.length > 0) {
+                  setWaitingInput({ question, options });
+                }
                 break;
 
               case 'error':
@@ -178,6 +259,11 @@ export default function Chat({
         }
       }
 
+      // 检查是否被取消
+      if (abortController.signal.aborted) {
+        return;
+      }
+
       // 如果是新 session，刷新 session 列表
       if (!currentSessionId) {
         // 刷新 session 列表
@@ -186,39 +272,70 @@ export default function Chat({
         if (sessionsData.success && sessionsData.sessions.length > 0) {
           const newSessionId = sessionsData.sessions[0].id;
           setCurrentSessionId(newSessionId);
-          onSessionCreated?.(newSessionId);
+          // 构造要传递给父组件的消息列表（包含当前对话的所有消息）
+          const assistantSessionMessage: SessionMessage = {
+            seq: 0,
+            role: 'assistant',
+            content: finalContent,
+            timestamp: new Date().toISOString(),
+            thinking: currentThinking || undefined,
+            toolCalls: currentToolCalls.length > 0 ? currentToolCalls : undefined,
+          };
+          const userSessionMessage: SessionMessage = {
+            seq: 0,
+            role: 'user',
+            content: messageText,
+            timestamp: new Date().toISOString(),
+          };
+          onSessionCreated?.(newSessionId, [userSessionMessage, assistantSessionMessage]);
         }
       }
 
-      setMessages(prev => [...prev, {
+      // 创建助手消息
+      const assistantMessage: ChatMessage = {
+        id: generateMessageId(),
         role: 'assistant',
         content: finalContent,
-        process: {
+        process: currentToolCalls.length > 0 || currentThinking ? {
           toolCalls: currentToolCalls,
           thinking: currentThinking,
-        },
-      }]);
+        } : undefined,
+      };
+      setMessages(prev => [...prev, assistantMessage]);
 
       setStreamThinking('');
       setStreamToolCalls([]);
       setStreamFinalContent('');
 
     } catch (error: any) {
+      // 如果是取消操作，不显示错误
+      if (error.name === 'AbortError') {
+        return;
+      }
       message.error('发送失败: ' + error.message);
     } finally {
+      abortControllerRef.current = null;
       setIsLoading(false);
     }
   }, [isLoading, passcode, currentSessionId, onSessionCreated]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!input.trim()) return;
+    
+    // 如果有 waitingInput，清除它（用户选择通过输入框回复）
+    if (waitingInput) {
+      setWaitingInput(null);
+    }
     sendMessage(input);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if (input.trim()) handleSubmit(e as any);
+      if (input.trim() && !isLoading) {
+        handleSubmit(e as any);
+      }
     }
   };
 
@@ -249,11 +366,11 @@ export default function Chat({
     );
   };
 
-  const renderAssistantMessage = (msg: ChatMessage, index: number) => {
+  const renderAssistantMessage = (msg: ChatMessage) => {
     const hasProcess = msg.process && (msg.process.toolCalls.length > 0 || msg.process.thinking);
 
     return (
-      <div key={index} style={{ marginBottom: 16, textAlign: 'left' }}>
+      <div key={msg.id} style={{ marginBottom: 16, textAlign: 'left' }}>
         <div style={{ maxWidth: '85%' }}>
           {hasProcess && (
             <Collapse
@@ -265,7 +382,7 @@ export default function Chat({
                   <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4 }}>
                     <span style={{ fontSize: 12, color: '#8c8c8c' }}>查看执行过程</span>
                     {msg.process!.toolCalls.map((tc, i) => (
-                      <Tag key={i} color={tc.success ? 'success' : 'error'}>{tc.tool}</Tag>
+                      <Tag key={`${msg.id}-tc-${i}`} color={tc.success ? 'success' : 'error'}>{tc.tool}</Tag>
                     ))}
                   </div>
                 ),
@@ -280,7 +397,7 @@ export default function Chat({
                       </div>
                     )}
                     {msg.process!.toolCalls.map((tc, i) => (
-                      <div key={i} style={{ marginBottom: 8, padding: 8, background: '#f0f5ff', borderRadius: 4 }}>
+                      <div key={`${msg.id}-tool-${i}`} style={{ marginBottom: 8, padding: 8, background: '#f0f5ff', borderRadius: 4 }}>
                         <Space style={{ marginBottom: 4 }}>
                           <ToolOutlined style={{ color: '#1890ff' }} />
                           <Text strong style={{ fontSize: 12 }}>{tc.tool}</Text>
@@ -297,7 +414,11 @@ export default function Chat({
                         {tc.result && (
                           <div style={{ marginTop: 4, color: tc.success ? '#52c41a' : '#ff4d4f' }}>
                             <Text type="secondary" style={{ fontSize: 11 }}>结果: </Text>
-                            <Text style={{ fontSize: 11 }}>{JSON.stringify(tc.result).substring(0, 200)}</Text>
+                            <div style={{ maxHeight: 200, overflow: 'auto' }}>
+                              <Text style={{ fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                                {typeof tc.result === 'object' ? JSON.stringify(tc.result, null, 2) : String(tc.result)}
+                              </Text>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -376,7 +497,11 @@ export default function Chat({
                         {tc.result && (
                           <div style={{ marginTop: 4, color: tc.success ? '#52c41a' : '#ff4d4f' }}>
                             <Text type="secondary" style={{ fontSize: 11 }}>结果: </Text>
-                            <Text style={{ fontSize: 11 }}>{JSON.stringify(tc.result).substring(0, 200)}</Text>
+                            <div style={{ maxHeight: 200, overflow: 'auto' }}>
+                              <Text style={{ fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                                {typeof tc.result === 'object' ? JSON.stringify(tc.result, null, 2) : String(tc.result)}
+                              </Text>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -426,9 +551,9 @@ export default function Chat({
           </div>
         )}
 
-        {messages.map((msg, i) => (
+        {messages.map((msg) => (
           msg.role === 'user' ? (
-            <div key={i} style={{ marginBottom: 16, textAlign: 'right' }}>
+            <div key={msg.id} style={{ marginBottom: 16, textAlign: 'right' }}>
               <div style={{
                 display: 'inline-block',
                 maxWidth: '85%',
@@ -442,39 +567,52 @@ export default function Chat({
               </div>
             </div>
           ) : (
-            renderAssistantMessage(msg, i)
+            renderAssistantMessage(msg)
           )
         ))}
 
         {renderStreaming()}
 
-        {waitingInput && (
-          <div style={{ padding: 16, background: '#f6ffed', border: '1px solid #b7eb8f', borderRadius: 8, marginBottom: 16 }}>
+        {waitingInput && Array.isArray(waitingInput.options) && waitingInput.options.length > 0 && (
+          <div style={{ 
+            padding: 16, 
+            background: '#f6ffed', 
+            border: '1px solid #b7eb8f', 
+            borderRadius: 8, 
+            marginBottom: 16 
+          }}>
             {waitingInput.question && (
-              <div className="markdown-content" style={{ marginBottom: 12 }}>
-                {renderMarkdown(waitingInput.question)}
+              <div style={{ marginBottom: 12 }}>
+                <Space style={{ marginBottom: 8 }}>
+                  <QuestionCircleOutlined style={{ color: '#52c41a' }} />
+                  <Text strong style={{ fontSize: 14 }}>需要你的选择</Text>
+                </Space>
+                <div className="markdown-content">
+                  {renderMarkdown(waitingInput.question)}
+                </div>
               </div>
             )}
-            {waitingInput.options && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {waitingInput.options.map((opt, i) => (
-                  <Button 
-                    key={i} 
-                    onClick={() => { setWaitingInput(null); sendMessage(opt); }} 
-                    type={i === 0 ? 'primary' : 'default'}
-                    style={{ 
-                      textAlign: 'left', 
-                      height: 'auto',
-                      whiteSpace: 'normal',
-                      padding: '8px 12px',
-                    }}
-                  >
-                    {i === 0 && <span style={{ marginRight: 8 }}>⭐ 推荐</span>}
-                    {opt}
-                  </Button>
-                ))}
-              </div>
-            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {waitingInput.options.map((opt, i) => (
+                <Button 
+                  key={`option-${i}`}
+                  onClick={() => { setWaitingInput(null); sendMessage(opt); }} 
+                  type={i === 0 ? 'primary' : 'default'}
+                  style={{ 
+                    textAlign: 'left', 
+                    height: 'auto',
+                    whiteSpace: 'normal',
+                    padding: '8px 12px',
+                  }}
+                >
+                  {i === 0 && <span style={{ marginRight: 8 }}>⭐ 推荐</span>}
+                  {opt}
+                </Button>
+              ))}
+            </div>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>
+              你也可以直接在输入框中输入自定义回复
+            </Text>
           </div>
         )}
       </div>
@@ -486,16 +624,16 @@ export default function Chat({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="输入消息..."
+              placeholder={waitingInput ? "选择上方选项，或输入自定义回复..." : "输入消息..."}
               autoSize={{ minRows: 1, maxRows: 4 }}
-              disabled={isLoading}
+              disabled={isLoading && !waitingInput}
               style={{ borderRadius: '8px 0 0 8px' }}
             />
             <Button
               type="primary"
               icon={<SendOutlined />}
               htmlType="submit"
-              disabled={!input.trim() || isLoading}
+              disabled={!input.trim() || (isLoading && !waitingInput)}
               style={{ borderRadius: '0 8px 8px 0' }}
             >
               发送

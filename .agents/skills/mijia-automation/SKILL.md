@@ -3,106 +3,103 @@ name: mijia-automation
 description: 米家自动化极客版规则创建指南。当用户想要创建智能场景、设备联动、定时任务、条件触发等自动化规则时使用此skill。
 metadata:
   author: oh-my-sage
-  version: "1.0"
-  platform: xiaomi-mijia
+  version: "2.0"
 ---
 
 # 米家自动化规则创建
 
-## 快速参考
-
-### 规则结构
+## 规则结构
 
 ```json
 {
-  "id": "graph_<timestamp>",
-  "nodes": [触发节点, 执行节点],
+  "id": "graph_1710000000000",
+  "nodes": [节点1, 节点2, ...],
   "cfg": {
-    "id": "graph_<timestamp>",
+    "id": "graph_1710000000000",
     "enable": true,
     "uiType": "graph",
     "userData": {
       "name": "规则名称",
-      "lastUpdateTime": <timestamp>,
+      "lastUpdateTime": 1710000000000,
       "transform": {"x": 0, "y": 0, "scale": 1, "rotate": 0}
     }
   }
 }
 ```
 
-### 常用节点类型
-
-| 类型 | 用途 | 关键配置 |
-|------|------|----------|
-| deviceInput | 设备触发器 | siid, eiid/piid, operator, value |
-| deviceOutput | 设备控制 | siid, aiid/piid, params |
-| timer | 定时触发 | hour, minute, filter.days |
-| delay | 延时执行 | timeout(ms) |
-| signalOr | 多触发源 | inputs |
-| condition | 条件分支 | inputs.trigger, inputs.condition |
-
-### 设备控制速查
-
-| 设备 | 操作 | siid | piid/aiid | params |
-|------|------|------|-----------|--------|
-| 灯光 | 开关 | 2 | piid=1 | [true/false] |
-| 灯光 | 亮度 | 2 | piid=2 | [1-100] |
-| 灯光 | 色温 | 2 | piid=3 | [2700-6500] |
-| 空调 | 开关 | 2 | piid=1 | [true/false] |
-| 空调 | 温度 | 2 | piid=2 | [16-30] |
-| 窗帘 | 开合 | 2 | piid=1 | [0-100] |
-
-## 创建流程
-
-1. **获取设备信息** - 使用 get_devices 了解可用设备
-2. **确定触发条件** - 选择触发器类型（设备/定时/场景）
-3. **构建节点** - 创建触发节点和执行节点
-4. **连接节点** - 通过 outputs/inputs 连接
-5. **使用 create_graph 创建** - 传递完整的节点和配置
-
-## 节点连接方式
+## 节点结构
 
 ```json
-// 节点A输出连接到节点B输入
-{"id": "nodeA", "outputs": {"output": [["nodeB", "trigger"]]}}
-
-// 节点B接收输入
-{"id": "nodeB", "inputs": {"trigger": null}, "outputs": {}}
+{
+  "id": "node1",
+  "type": "deviceInput",
+  "cfg": {
+    "urn": "urn:miot-spec-v2:device:light:0000A001:xiaomi-btlm2p:2",
+    "pos": {"x": 100, "y": 100, "width": 528, "height": 164},
+    "name": "deviceInput",
+    "version": 1
+  },
+  "props": { ... },
+  "inputs": {},
+  "outputs": {"output": ["node2.trigger"]}
+}
 ```
 
-## 常见模式
+## 关键校验规则
 
-### 单触发单执行
-```
-deviceInput → deviceOutput
-```
+1. **节点 id**：只允许 `[0-9a-zA-Z]`，不能用下划线、连字符
+2. **outputs 格式**：`"portName": ["nodeId.inputPort"]`（点分隔字符串）
+3. **deviceOutput**：即使无后续节点，必须有 `"output": []`
+4. **deviceGet**：必须有 `outputs.output` 和 `outputs.output2`（两个分支）
+5. **inputs 命名**：
+   - `deviceGet`, `varGet`, `statusLast`, `varSetNumber`, `varSetString`, `deviceGetSetVar` 等使用 `input`
+   - `deviceOutput`, `delay`, `condition` 等使用 `trigger`
+   - 搞混会导致 "No input" 错误！
+6. **dtype 映射**：MIOT Spec 的 `bool`→`boolean`，`uint8`/`int32` 等→`int`，`float`→`float`
+7. **props 必须存在**：所有节点必须有 `props` 字段（可以是空对象 `{}`），否则报 "Invalid props"
+8. **cfg.name**：所有节点的 `cfg` 应包含 `name` 字段（值为节点类型名）
 
-### 定时触发
-```
-timer → deviceOutput
-```
+## 常用操作符
 
-### 多触发源
-```
-deviceInput ─┐
-             ├─ signalOr → deviceOutput
-deviceInput ─┘
-```
+| dtype | 允许的 operator |
+|-------|----------------|
+| int | `>=`, `<=`, `=`, `!=`, `>`, `<`, `between`, `include` |
+| float | `>`, `<`, `between` |
+| boolean | `=` |
+| string | `=` |
 
-### 场景联动（多设备）
-```
-deviceInput → deviceOutput → deviceOutput → ...
-```
+## 快速参考
+
+| 节点类型 | 用途 | inputs | 关键 props | cfg.name |
+|----------|------|--------|-----------|----------|
+| deviceInput | 设备触发 | `{}` | did, siid, piid/eiid, operator, v1 | deviceInput |
+| deviceOutput | 设备控制 | `{"trigger": null}` | did, siid, piid, value | deviceOutput |
+| deviceGet | 查询状态 | `{"input": null}` | did, siid, piid, dtype, operator, v1 | deviceGet |
+| alarmClock | 定时触发 | `{}` | type, hour, minute, second, filter | alarmClock |
+| timeRange | 时间段 | `{}` | start, end, filter | timeRange |
+| delay | 延时 | `{"trigger": null}` | timeout (毫秒) | delay |
+| condition | 条件判断 | `{"trigger": null, "condition": null}` | 必须有（可空 `{}`） | condition |
+| signalOr | 任一事件 | `{input0: null, input1: null}` | - | - |
+
+## 设备控制常见模式
+
+- 开关灯：`siid=2, piid=1, value=true/false`
+- 亮度：`siid=2, piid=2, value=1-100`
+- 窗帘开合：`siid=2, piid=1, value=0-100`
+
+## MIOT Spec dtype 映射
+
+MIOT Spec 返回的 `format` 需要转换为网关 `dtype`：
+
+| MIOT format | 网关 dtype | v1 值类型 |
+|-------------|-----------|----------|
+| `bool` | `boolean` | `true`/`false` |
+| `uint8`, `int32` 等 | `int` | 整数 |
+| `float`, `double` | `float` | 数字 |
+| `string` | `string` | 字符串 |
+
+**示例**：MIOT 返回 `"format": "bool"` → 使用 `"dtype": "boolean"`
 
 ## 详细参考
 
-- [节点类型详解](references/node-types.md)
-- [设备 URN 查询](references/device-urn.md)
-- [网关场景触发](references/gateway-scene.md)
-
-## 注意事项
-
-1. **节点ID唯一** - 使用 `node_<timestamp>` 格式
-2. **数据类型匹配** - dtype 必须与设备定义一致
-3. **参数格式** - params 必须是数组格式
-4. **changeGraphConfig** - 需要传递完整的 userData，否则会丢失规则名称
+- [完整节点定义与校验规则](references/mijia-complete-reference.md)

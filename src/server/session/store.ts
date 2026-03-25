@@ -35,6 +35,7 @@ export interface SessionMessage {
  * 工具调用记录
  */
 export interface ToolCall {
+  toolCallId?: string;  // Vercel AI SDK 的工具调用 ID
   tool: string;
   args: any;
   result: any;

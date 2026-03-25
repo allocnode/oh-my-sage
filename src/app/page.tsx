@@ -181,8 +181,9 @@ export default function HomePage() {
   /**
    * Session 创建成功回调（由 Chat 组件触发）
    */
-  const handleSessionCreated = (sessionId: string) => {
+  const handleSessionCreated = (sessionId: string, messages: SessionMessage[]) => {
     setActiveSessionId(sessionId);
+    setCurrentMessages(messages);
     loadSessions();
   };
 
