@@ -27,10 +27,10 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
     
     /**
      * 思考工具
-     * 让 Agent 输出思考过程
+     * 仅用于复杂任务（如创建规则），简单任务不要使用
      */
     'think': tool({
-      description: '思考问题并输出思考过程。在做决策前，使用这个工具来整理思路。',
+      description: '仅用于复杂任务的思考（如创建规则）。简单任务（查询设备、查看规则等）不要使用此工具，直接调用相应工具即可。',
       parameters: z.object({
         thought: z.string().describe('思考内容'),
         nextAction: z.string().optional().describe('下一步行动'),
@@ -46,10 +46,10 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
     
     /**
      * 向用户提问
-     * 需要澄清或确认时使用
+     * 仅用于需要用户选择或确认时
      */
     'ask_user': tool({
-      description: '向用户提问或请求确认。options 必须是字符串数组，每个元素是一个选项。例如: options: ["选项1", "选项2"]',
+      description: '仅用于需要用户选择或确认时。简单任务不要使用。',
       parameters: z.object({
         question: z.string().describe('问题内容'),
         options: z.array(z.string()).describe('选项列表，必须是字符串数组，例如: ["选项1", "选项2"]'),
