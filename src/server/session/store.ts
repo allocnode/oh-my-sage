@@ -24,7 +24,7 @@ export interface SessionMeta {
  */
 export interface SessionMessage {
   seq: number;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'compressed';
   content: string;
   timestamp: string;
   thinking?: string;
@@ -241,6 +241,49 @@ export class SessionStore {
     }
 
     return title || '新对话';
+  }
+
+  /**
+   * 插入压缩摘要消息
+   * 将当前 session 从最后一条 compressed 消息之后的内容压缩为一条 compressed 消息
+   * 原始消息保留在文件中，compressed 消息追加在末尾
+   * reloadMessages 读取时会找到最后一条 compressed 并截断其前面的历史
+   */
+  async insertCompressedSummary(sessionId: string, summary: string): Promise<SessionMessage> {
+    return this.appendMessage(sessionId, {
+      role: 'compressed',
+      content: summary,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * 截断 session 消息
+   * 保留 seq <= keepSeq 的消息，删除之后的所有消息
+   * 用于"重做"功能：回到指定用户消息位置
+   */
+  async truncateSession(sessionId: string, keepSeq: number): Promise<void> {
+    const allMessages = await this.getMessages(sessionId);
+    const keptMessages = allMessages.filter(m => m.seq <= keepSeq);
+
+    // 重写 JSONL 文件
+    const sessionPath = this.getSessionPath(sessionId);
+    const content = keptMessages.map(m => JSON.stringify(m)).join('\n') + (keptMessages.length > 0 ? '\n' : '');
+    fs.writeFileSync(sessionPath, content);
+
+    // 更新索引
+    const index = this.readIndex();
+    const sessionIndex = index.sessions.findIndex(s => s.id === sessionId);
+    if (sessionIndex >= 0) {
+      index.sessions[sessionIndex].messageCount = keptMessages.length;
+      index.sessions[sessionIndex].updatedAt = new Date().toISOString();
+      // 更新摘要为最后一条用户消息
+      const lastUserMsg = [...keptMessages].reverse().find(m => m.role === 'user');
+      if (lastUserMsg) {
+        index.sessions[sessionIndex].summary = lastUserMsg.content.substring(0, 100);
+      }
+      this.writeIndex(index);
+    }
   }
 
   /**

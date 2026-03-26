@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useCallback, useRef } from 'react';
-import { Layout, Typography, Space, theme, message, Tabs } from 'antd';
-import { RobotOutlined, HomeOutlined, ApartmentOutlined } from '@ant-design/icons';
+import { Layout, Typography, Space, message, Tabs } from 'antd';
+import { RobotOutlined, HomeOutlined, ApartmentOutlined, ApiOutlined } from '@ant-design/icons';
 import Chat from '@/components/Chat';
 import DevicePanel from '@/components/DevicePanel';
 import GraphPanel from '@/components/GraphPanel';
@@ -10,7 +10,7 @@ import SessionPanel from '@/components/SessionPanel';
 import LoginPage from '@/components/LoginPage';
 
 const { Header, Sider, Content } = Layout;
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 interface SessionMeta {
   id: string;
@@ -24,7 +24,7 @@ interface SessionMeta {
 
 interface SessionMessage {
   seq: number;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'compressed';
   content: string;
   timestamp: string;
   thinking?: string;
@@ -38,12 +38,7 @@ interface GraphSummary {
   lastUpdateTime?: number;
 }
 
-/**
- * 主页面组件
- * 登录成功后显示聊天界面、设备面板和 Session 面板
- */
 export default function HomePage() {
-  const { token: { colorBgContainer, borderRadiusLG } } = theme.useToken();
   const [collapsed, setCollapsed] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [passcode, setPasscode] = useState('');
@@ -51,26 +46,20 @@ export default function HomePage() {
   const [devices, setDevices] = useState<any[]>([]);
   const [stats, setStats] = useState({ total: 0, online: 0, offline: 0, rooms: 0 });
 
-  // Session 状态
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>();
   const [currentMessages, setCurrentMessages] = useState<SessionMessage[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
 
-  // Graph 状态
   const [graphs, setGraphs] = useState<GraphSummary[]>([]);
   const [graphsLoading, setGraphsLoading] = useState(false);
   const graphsLoadedRef = useRef(false);
 
-  /**
-   * 加载设备列表
-   */
   const loadDevices = useCallback(async () => {
     setDevicesLoading(true);
     try {
       const response = await fetch('/api/devices');
       const result = await response.json();
-
       if (result.success) {
         setDevices(result.devices || []);
         setStats(result.stats || { total: 0, online: 0, offline: 0, rooms: 0 });
@@ -84,15 +73,11 @@ export default function HomePage() {
     }
   }, []);
 
-  /**
-   * 加载 Session 列表
-   */
   const loadSessions = useCallback(async () => {
     setSessionsLoading(true);
     try {
       const response = await fetch('/api/sessions');
       const result = await response.json();
-
       if (result.success) {
         setSessions(result.sessions || []);
       }
@@ -103,15 +88,11 @@ export default function HomePage() {
     }
   }, []);
 
-  /**
-   * 加载 Graph 列表
-   */
   const loadGraphs = useCallback(async () => {
     setGraphsLoading(true);
     try {
       const response = await fetch('/api/graphs');
       const result = await response.json();
-
       if (result.success) {
         setGraphs(result.graphs || []);
         graphsLoadedRef.current = true;
@@ -123,30 +104,17 @@ export default function HomePage() {
     }
   }, []);
 
-  /**
-   * 登录成功回调
-   */
   const handleLoginSuccess = async (code: string) => {
     setPasscode(code);
     setIsLoggedIn(true);
-
-    // 进入首页后异步加载设备和session
-    await Promise.all([
-      loadDevices(),
-      loadSessions(),
-    ]);
+    await Promise.all([loadDevices(), loadSessions()]);
   };
 
-  /**
-   * 选择 Session
-   */
   const handleSelectSession = async (sessionId: string) => {
     setActiveSessionId(sessionId);
-
     try {
       const response = await fetch(`/api/sessions/${sessionId}`);
       const result = await response.json();
-
       if (result.success) {
         setCurrentMessages(result.messages || []);
       }
@@ -155,16 +123,10 @@ export default function HomePage() {
     }
   };
 
-  /**
-   * 删除 Session
-   */
   const handleDeleteSession = async (sessionId: string) => {
     try {
-      const response = await fetch(`/api/sessions/${sessionId}`, {
-        method: 'DELETE',
-      });
+      const response = await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
       const result = await response.json();
-
       if (result.success) {
         setSessions(prev => prev.filter(s => s.id !== sessionId));
         if (activeSessionId === sessionId) {
@@ -178,18 +140,36 @@ export default function HomePage() {
     }
   };
 
-  /**
-   * Session 创建成功回调（由 Chat 组件触发）
-   */
+  const handleNewSession = () => {
+    setActiveSessionId(undefined);
+    setCurrentMessages([]);
+  };
+
   const handleSessionCreated = (sessionId: string, messages: SessionMessage[]) => {
     setActiveSessionId(sessionId);
     setCurrentMessages(messages);
     loadSessions();
   };
 
-  /**
-   * 切换 Graph 状态
-   */
+  const handleResetSession = useCallback(async (sessionId: string, seq: number) => {
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'truncate', seq }),
+      });
+      const result = await response.json();
+      if (result.success) {
+        setCurrentMessages(result.messages || []);
+        message.success('已回退到指定位置，修改消息后重新发送即可');
+      } else {
+        message.error(result.error || '回退失败');
+      }
+    } catch (error) {
+      message.error('回退失败: ' + String(error));
+    }
+  }, []);
+
   const handleToggleGraph = async (id: string, enable: boolean) => {
     try {
       const response = await fetch('/api/graphs', {
@@ -198,12 +178,8 @@ export default function HomePage() {
         body: JSON.stringify({ id, enable }),
       });
       const result = await response.json();
-
       if (result.success) {
-        // 更新本地状态
-        setGraphs(prev => prev.map(g =>
-          g.id === id ? { ...g, enable } : g
-        ));
+        setGraphs(prev => prev.map(g => g.id === id ? { ...g, enable } : g));
         message.success(enable ? '规则已启用' : '规则已禁用');
       } else {
         message.error(result.message || '操作失败');
@@ -213,16 +189,10 @@ export default function HomePage() {
     }
   };
 
-  /**
-   * 删除 Graph
-   */
   const handleDeleteGraph = async (id: string) => {
     try {
-      const response = await fetch(`/api/graphs?id=${id}`, {
-        method: 'DELETE',
-      });
+      const response = await fetch(`/api/graphs?id=${id}`, { method: 'DELETE' });
       const result = await response.json();
-
       if (result.success) {
         setGraphs(prev => prev.filter(g => g.id !== id));
         message.success('规则已删除');
@@ -234,70 +204,85 @@ export default function HomePage() {
     }
   };
 
-  /**
-   * 处理 Tab 切换
-   */
   const handleTabChange = (key: string) => {
     if (key === 'graphs' && !graphsLoadedRef.current) {
       loadGraphs();
     }
   };
 
-  // 如果未登录，显示登录页面
   if (!isLoggedIn) {
     return <LoginPage onLoginSuccess={handleLoginSuccess} />;
   }
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
-      {/* 顶部标题栏 */}
+    <Layout style={{ minHeight: '100vh', background: 'var(--bg-deep)' }}>
+      {/* 顶栏 */}
       <Header style={{
-        background: colorBgContainer,
         padding: '0 24px',
         display: 'flex',
         alignItems: 'center',
-        borderBottom: '1px solid #f0f0f0',
+        justifyContent: 'space-between',
         position: 'sticky',
         top: 0,
         zIndex: 100,
       }}>
-        <Space>
-          <RobotOutlined style={{ fontSize: 24, color: '#1890ff' }} />
-          <Title level={4} style={{ margin: 0 }}>
+        <Space size={12}>
+          <div style={{
+            width: 32,
+            height: 32,
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--gradient-primary)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: 'var(--shadow-glow)',
+          }}>
+            <RobotOutlined style={{ fontSize: 16, color: '#fff' }} />
+          </div>
+          <span className="gradient-text" style={{ fontSize: 17, fontWeight: 700, letterSpacing: -0.3 }}>
             Oh My Sage
-          </Title>
-          <Text type="secondary">
+          </span>
+          <Text style={{ color: 'var(--text-muted)', fontSize: 12 }}>
             米家自动化极客版 AI Agent
           </Text>
-          <Text type="success" style={{ marginLeft: 16 }}>
-            已连接 | 设备: {stats.online}/{stats.total} 在线
+        </Space>
+        <Space size={6}>
+          <div style={{
+            width: 7,
+            height: 7,
+            borderRadius: '50%',
+            background: '#10b981',
+            boxShadow: '0 0 8px rgba(16,185,129,0.5)',
+          }} />
+          <Text style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
+            {stats.online}/{stats.total} 设备在线
           </Text>
         </Space>
       </Header>
 
       <Layout>
-        {/* 左侧面板 - 设备和规则 */}
+        {/* 左侧边栏 */}
         <Sider
-          width={320}
+          width={300}
           collapsible
           collapsed={collapsed}
           onCollapse={setCollapsed}
-          style={{ background: colorBgContainer }}
           breakpoint="lg"
+          trigger={null}
+          style={{
+            borderRight: '1px solid var(--border-subtle)',
+          }}
         >
-          {!collapsed && (
+          {!collapsed ? (
             <Tabs
               defaultActiveKey="devices"
               onChange={handleTabChange}
+              centered
+              size="small"
               items={[
                 {
                   key: 'devices',
-                  label: (
-                    <Space>
-                      <HomeOutlined />
-                      设备
-                    </Space>
-                  ),
+                  label: <span><HomeOutlined style={{ marginRight: 4 }} />设备</span>,
                   children: (
                     <DevicePanel
                       devices={devices}
@@ -309,12 +294,7 @@ export default function HomePage() {
                 },
                 {
                   key: 'graphs',
-                  label: (
-                    <Space>
-                      <ApartmentOutlined />
-                      规则
-                    </Space>
-                  ),
+                  label: <span><ApartmentOutlined style={{ marginRight: 4 }} />规则</span>,
                   children: (
                     <GraphPanel
                       graphs={graphs}
@@ -326,49 +306,57 @@ export default function HomePage() {
                   ),
                 },
               ]}
-              style={{ padding: '0 8px' }}
             />
-          )}
-          {collapsed && (
-            <div style={{ padding: 16, textAlign: 'center' }}>
-              <HomeOutlined style={{ fontSize: 24 }} />
+          ) : (
+            <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-muted)' }}>
+              <ApiOutlined style={{ fontSize: 22 }} />
             </div>
           )}
         </Sider>
 
-        {/* 主内容区域 */}
-        <Content style={{ padding: 24, background: '#f5f5f5' }}>
-          <div style={{ display: 'flex', gap: 24, height: 'calc(100vh - 64px - 48px)' }}>
-            {/* 聊天区域 */}
-            <div style={{
-              flex: 1,
-              background: colorBgContainer,
-              borderRadius: borderRadiusLG,
-              overflow: 'hidden',
-              display: 'flex',
-              flexDirection: 'column',
-            }}>
+        {/* 主内容区 */}
+        <Content style={{ padding: 16, background: 'var(--bg-deep)' }}>
+          <div style={{
+            display: 'flex',
+            gap: 12,
+            height: 'calc(100vh - 56px - 32px)',
+          }}>
+            {/* 聊天区 */}
+            <div
+              className="glass-panel"
+              style={{
+                flex: 1,
+                borderRadius: 'var(--radius-lg)',
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+              }}
+            >
               <Chat
                 passcode={passcode}
                 sessionId={activeSessionId}
                 initialMessages={currentMessages}
                 onSessionCreated={handleSessionCreated}
+                onResetSession={handleResetSession}
               />
             </div>
 
             {/* Session 面板 */}
-            <div style={{
-              width: 320,
-              background: colorBgContainer,
-              borderRadius: borderRadiusLG,
-              overflow: 'hidden',
-            }}>
+            <div
+              className="glass-panel"
+              style={{
+                width: 300,
+                borderRadius: 'var(--radius-lg)',
+                overflow: 'hidden',
+              }}
+            >
               <SessionPanel
                 sessions={sessions}
                 activeSessionId={activeSessionId}
                 loading={sessionsLoading}
                 onSelectSession={handleSelectSession}
                 onDeleteSession={handleDeleteSession}
+                onNewSession={handleNewSession}
                 onRefresh={loadSessions}
               />
             </div>

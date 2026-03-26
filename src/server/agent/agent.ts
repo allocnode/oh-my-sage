@@ -3,7 +3,7 @@
  * 实现工具驱动的 Agent 循环
  */
 
-import { streamText, CoreMessage } from 'ai';
+import { streamText, generateText, CoreMessage } from 'ai';
 import { createModel, ModelConfig, getModelConfigFromEnv } from '../ai/model';
 import { createTools } from '../ai/tools';
 import { SYSTEM_PROMPT } from '../ai/prompts';
@@ -29,6 +29,11 @@ export type AgentOutput =
  * 实现持续运行的思考-行动循环
  */
 export class Agent {
+  /** 上下文压缩阈值（token 估算值），超过此值触发压缩 */
+  private static readonly MAX_CONTEXT_TOKENS = 60000;
+  /** 压缩时保留的最近消息轮数（这些消息不参与压缩，直接保留） */
+  private static readonly KEEP_RECENT_TURNS = 3;
+
   private messages: CoreMessage[] = [];
   private gateway: GatewayClient;
   private modelConfig: ModelConfig;
@@ -65,17 +70,41 @@ export class Agent {
   /**
    * 从 sessionStore 重新加载消息到 messages
    * 确保 this.messages 与 sessionStore 一致
+   * 
+   * 如果 session 中存在 compressed 类型的消息，取最后一条 compressed 作为起点，
+   * 丢弃其之前的所有历史，以压缩摘要作为对话上下文的起点
    */
   private async reloadMessages(): Promise<void> {
     if (!this.sessionId) return;
     
-    const sessionMessages = await this.sessionStore.getMessages(this.sessionId);
+    const allSessionMessages = await this.sessionStore.getMessages(this.sessionId);
+
+    // 找到最后一条 compressed 消息的索引
+    let compressedIndex = -1;
+    for (let i = allSessionMessages.length - 1; i >= 0; i--) {
+      if (allSessionMessages[i].role === 'compressed') {
+        compressedIndex = i;
+        break;
+      }
+    }
+
+    // 如果有 compressed 消息，截断其前面的历史
+    let sessionMessages = allSessionMessages;
+    if (compressedIndex >= 0) {
+      sessionMessages = allSessionMessages.slice(compressedIndex);
+    }
 
     // 转换为 CoreMessage 格式
     this.messages = [];
     
     for (const msg of sessionMessages) {
-      if (msg.role === 'user') {
+      if (msg.role === 'compressed') {
+        // 压缩摘要：作为 user 消息注入，为后续对话提供上下文
+        this.messages.push({
+          role: 'user',
+          content: `[以下是对之前对话的摘要]\n${msg.content}\n[摘要结束，请基于以上上下文继续对话]`,
+        });
+      } else if (msg.role === 'user') {
         // 用户消息
         this.messages.push({
           role: 'user',
@@ -125,6 +154,122 @@ export class Agent {
         }
       }
     }
+  }
+
+  /**
+   * 估算当前 messages 的 token 数
+   * 粗略按 1 token ≈ 3.5 字符（中文场景偏保守）
+   */
+  private estimateTokens(): number {
+    let totalChars = 0;
+    // system prompt
+    totalChars += this.systemPrompt.length;
+
+    for (const msg of this.messages) {
+      if (typeof msg.content === 'string') {
+        totalChars += msg.content.length;
+      } else if (Array.isArray(msg.content)) {
+        for (const part of msg.content) {
+          if (part.type === 'text') {
+            totalChars += part.text.length;
+          } else if (part.type === 'tool-call') {
+            totalChars += JSON.stringify(part.args).length;
+          } else if (part.type === 'tool-result') {
+            totalChars += JSON.stringify(part.result).length;
+          }
+        }
+      }
+    }
+    return Math.ceil(totalChars / 3.5);
+  }
+
+  /**
+   * 获取当前 session 从 sessionStore 加载的原始消息（不含 compressed 截断）
+   * 用于压缩时获取完整历史
+   */
+  private async getAllSessionMessages() {
+    if (!this.sessionId) return [];
+    return this.sessionStore.getMessages(this.sessionId);
+  }
+
+  /**
+   * 压缩对话历史
+   * 1. 找到最后一条 compressed 消息（如有），取其后的所有消息
+   2. 保留最近 N 轮消息不动，压缩前面的部分
+   3. 调用 LLM 生成摘要
+   4. 将摘要写入 session 作为新的 compressed 消息
+   5. 重新加载 messages
+   */
+  private async compressHistory(): Promise<void> {
+    if (!this.sessionId) return;
+
+    const allMessages = await this.getAllSessionMessages();
+
+    // 找到最后一条 compressed 消息的索引
+    let lastCompressedIndex = -1;
+    for (let i = allMessages.length - 1; i >= 0; i--) {
+      if (allMessages[i].role === 'compressed') {
+        lastCompressedIndex = i;
+        break;
+      }
+    }
+
+    // 取最后一条 compressed 之后的所有消息
+    const currentMessages = lastCompressedIndex >= 0
+      ? allMessages.slice(lastCompressedIndex + 1)
+      : allMessages;
+
+    // 需要至少有足够多的消息才值得压缩
+    const userMsgCount = currentMessages.filter(m => m.role === 'user').length;
+    if (userMsgCount <= Agent.KEEP_RECENT_TURNS + 2) return;
+
+    // 找到压缩截止点：保留最近 KEEP_RECENT_TURNS 轮，压缩前面的
+    let cutoffSeq = -1;
+    let recentUserCount = 0;
+    for (let i = currentMessages.length - 1; i >= 0; i--) {
+      if (currentMessages[i].role === 'user') {
+        recentUserCount++;
+        if (recentUserCount > Agent.KEEP_RECENT_TURNS) {
+          cutoffSeq = currentMessages[i].seq;
+          break;
+        }
+      }
+    }
+
+    if (cutoffSeq < 0) return;
+
+    // 取截止点之前的消息用于压缩
+    const toCompress = currentMessages.filter(m => m.seq < cutoffSeq);
+    if (toCompress.length === 0) return;
+
+    // 构造压缩请求的对话内容
+    const historyText = toCompress.map(m => {
+      if (m.role === 'user') return `用户: ${m.content}`;
+      if (m.role === 'assistant') return `助手: ${m.content || '(执行了工具调用)'}`;
+      return null;
+    }).filter(Boolean).join('\n');
+
+    // 调用 LLM 生成摘要（独立调用，不使用 tools）
+    const model = createModel(this.modelConfig);
+    const summaryResult = await generateText({
+      model,
+      messages: [
+        {
+          role: 'user',
+          content: `请将以下对话历史压缩为一段简洁的摘要，保留所有关键信息（用户需求、已做的操作、设备/规则的状态、未完成的事项等）。用中文输出，不要超过 500 字。\n\n对话历史：\n${historyText}`,
+        },
+      ],
+      temperature: 0.3,
+    });
+
+    const summary = summaryResult.text.trim();
+    if (!summary) return;
+
+    // 将压缩摘要写入 session
+    await this.sessionStore.insertCompressedSummary(this.sessionId, summary);
+
+    // 重新加载 messages（会自动截断 compressed 之前的历史）
+    await this.reloadMessages();
   }
 
   /**
@@ -180,6 +325,17 @@ export class Agent {
       this.messages.push({ role: 'user', content: userInput });
       // 保存用户消息到 session
       await this.saveUserMessage(userInput);
+    }
+
+    // 检查上下文大小，必要时自动压缩
+    const estimatedTokens = this.estimateTokens();
+    if (estimatedTokens > Agent.MAX_CONTEXT_TOKENS && this.sessionId) {
+      try {
+        await this.compressHistory();
+      } catch (compressError) {
+        // 压缩失败不应阻断对话，记录日志继续
+        console.error('对话历史压缩失败，继续执行:', compressError);
+      }
     }
 
     try {

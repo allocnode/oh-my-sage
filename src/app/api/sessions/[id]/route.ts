@@ -55,7 +55,14 @@ export async function PATCH(
 ) {
   try {
     const { id } = params;
-    const body = await request.json();
+    const text = await request.text();
+    if (!text) {
+      return NextResponse.json({ success: false, error: '请求体为空' }, { status: 400 });
+    }
+    let body: any;
+    try { body = JSON.parse(text); } catch {
+      return NextResponse.json({ success: false, error: '无效的 JSON' }, { status: 400 });
+    }
     const { title, isActive } = body;
 
     const store = getSessionStore();
@@ -83,6 +90,67 @@ export async function PATCH(
     return NextResponse.json({
       success: false,
       error: '更新 session 失败',
+      message: error instanceof Error ? error.message : '未知错误',
+    }, { status: 500 });
+  }
+}
+
+/**
+ * POST /api/sessions/[id]
+ * 支持 action: truncate - 截断 session 消息到指定位置
+ */
+export async function POST(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const { id } = params;
+    const text = await request.text();
+    if (!text) {
+      return NextResponse.json({
+        success: false,
+        error: '请求体为空',
+      }, { status: 400 });
+    }
+    let body: any;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      return NextResponse.json({
+        success: false,
+        error: '请求体不是有效的 JSON',
+      }, { status: 400 });
+    }
+    const { action, seq } = body;
+
+    if (action === 'truncate') {
+      if (typeof seq !== 'number' || seq < 0) {
+        return NextResponse.json({
+          success: false,
+          error: '缺少有效的 seq 参数',
+        }, { status: 400 });
+      }
+
+      const store = getSessionStore();
+      await store.truncateSession(id, seq);
+
+      // 返回截断后的消息
+      const messages = await store.getMessages(id);
+      return NextResponse.json({
+        success: true,
+        messages,
+      });
+    }
+
+    return NextResponse.json({
+      success: false,
+      error: `未知的 action: ${action}`,
+    }, { status: 400 });
+  } catch (error) {
+    console.error('Session POST 操作失败:', error);
+    return NextResponse.json({
+      success: false,
+      error: '操作失败',
       message: error instanceof Error ? error.message : '未知错误',
     }, { status: 500 });
   }
