@@ -1,393 +1,491 @@
 /* Oh My Sage - 暗色科技风主题 */
 
 :root {
-  /* 核心色 */
-  --bg-deep: #0a0a14;
-  --bg-base: #0f0f1e;
-  --bg-surface: rgba(255, 255, 255, 0.04);
-  --bg-surface-hover: rgba(255, 255, 255, 0.07);
-  --bg-glass: rgba(15, 15, 30, 0.85);
-  --bg-glass-light: rgba(255, 255, 255, 0.06);
+    /* 核心色 */
+    --bg-deep: #0a0a14;
+    --bg-base: #0f0f1e;
+    --bg-surface: rgba(255, 255, 255, 0.04);
+    --bg-surface-hover: rgba(255, 255, 255, 0.07);
+    --bg-glass: rgba(15, 15, 30, 0.85);
+    --bg-glass-light: rgba(255, 255, 255, 0.06);
 
-  /* 渐变 */
-  --gradient-primary: linear-gradient(135deg, #6366f1, #8b5cf6);
-  --gradient-accent: linear-gradient(135deg, #06b6d4, #3b82f6);
-  --gradient-warm: linear-gradient(135deg, #f59e0b, #ef4444);
-  --gradient-glow: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #06b6d4 100%);
+    /* 渐变 */
+    --gradient-primary: linear-gradient(135deg, #6366f1, #8b5cf6);
+    --gradient-accent: linear-gradient(135deg, #06b6d4, #3b82f6);
+    --gradient-warm: linear-gradient(135deg, #f59e0b, #ef4444);
+    --gradient-glow: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #06b6d4 100%);
 
-  /* 文本 */
-  --text-primary: #e2e8f0;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --text-bright: #f8fafc;
+    /* 文本 */
+    --text-primary: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --text-bright: #f8fafc;
 
-  /* 边框 */
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-default: rgba(255, 255, 255, 0.1);
-  --border-active: rgba(99, 102, 241, 0.5);
+    /* 边框 */
+    --border-subtle: rgba(255, 255, 255, 0.06);
+    --border-default: rgba(255, 255, 255, 0.1);
+    --border-active: rgba(99, 102, 241, 0.5);
 
-  /* 阴影 */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
-  --shadow-glow: 0 0 20px rgba(99, 102, 241, 0.15);
-  --shadow-glow-accent: 0 0 20px rgba(6, 182, 212, 0.15);
+    /* 阴影 */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+    --shadow-glow: 0 0 20px rgba(99, 102, 241, 0.15);
+    --shadow-glow-accent: 0 0 20px rgba(6, 182, 212, 0.15);
 
-  /* 圆角 */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
-  --radius-xl: 20px;
-  --radius-full: 9999px;
+    /* 圆角 */
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 16px;
+    --radius-xl: 20px;
+    --radius-full: 9999px;
 
-  /* 动画 */
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    /* 动画 */
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 *,
 *::before,
 *::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
 }
 
 html,
 body {
-  height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto,
+    height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--text-primary);
-  background: var(--bg-deep);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text-primary);
+    background: var(--bg-deep);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 #root,
 #__next {
-  height: 100%;
+    height: 100%;
 }
 
 a {
-  color: #818cf8;
-  text-decoration: none;
-  transition: color 0.2s var(--ease-out);
+    color: #818cf8;
+    text-decoration: none;
+    transition: color 0.2s var(--ease-out);
 }
+
 a:hover {
-  color: #a5b4fc;
+    color: #a5b4fc;
 }
 
 /* ───── 滚动条 ───── */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+    width: 6px;
+    height: 6px;
 }
+
 ::-webkit-scrollbar-track {
-  background: transparent;
+    background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: var(--radius-full);
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-full);
 }
+
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.18);
 }
 
 /* ───── 选择文本 ───── */
 ::selection {
-  background: rgba(99, 102, 241, 0.3);
-  color: #fff;
+    background: rgba(99, 102, 241, 0.3);
+    color: #fff;
 }
 
 /* ───── 通用动画 ───── */
 @keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
+
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
 }
+
 @keyframes pulseGlow {
-  0%, 100% { box-shadow: 0 0 8px rgba(99,102,241,0.2); }
-  50%      { box-shadow: 0 0 20px rgba(99,102,241,0.4); }
+    0%, 100% {
+        box-shadow: 0 0 8px rgba(99, 102, 241, 0.2);
+    }
+    50% {
+        box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
+    }
 }
+
 @keyframes shimmer {
-  0%   { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+    0% {
+        background-position: -200% 0;
+    }
+    100% {
+        background-position: 200% 0;
+    }
 }
+
 @keyframes gradientShift {
-  0%   { background-position: 0% 50%; }
-  50%  { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
+    0% {
+        background-position: 0% 50%;
+    }
+    50% {
+        background-position: 100% 50%;
+    }
+    100% {
+        background-position: 0% 50%;
+    }
 }
+
 @keyframes typingBounce {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-  30%           { transform: translateY(-6px); opacity: 1; }
+    0%, 60%, 100% {
+        transform: translateY(0);
+        opacity: 0.4;
+    }
+    30% {
+        transform: translateY(-6px);
+        opacity: 1;
+    }
 }
 
 /* ───── 玻璃面板 ───── */
 .glass-panel {
-  background: var(--bg-glass);
-  backdrop-filter: blur(20px) saturate(1.5);
-  -webkit-backdrop-filter: blur(20px) saturate(1.5);
-  border: 1px solid var(--border-subtle);
+    background: var(--bg-glass);
+    backdrop-filter: blur(20px) saturate(1.5);
+    -webkit-backdrop-filter: blur(20px) saturate(1.5);
+    border: 1px solid var(--border-subtle);
 }
 
 .glass-panel-light {
-  background: var(--bg-glass-light);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--border-subtle);
+    background: var(--bg-glass-light);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border-subtle);
 }
 
 /* ───── 渐变文字 ───── */
 .gradient-text {
-  background: var(--gradient-glow);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+    background: var(--gradient-glow);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
 }
 
 /* ───── Markdown 内容 ───── */
 .markdown-content {
-  line-height: 1.7;
-  color: var(--text-primary);
+    line-height: 1.7;
+    color: var(--text-primary);
 }
+
 .markdown-content h1,
 .markdown-content h2,
 .markdown-content h3 {
-  color: var(--text-bright);
-  font-weight: 600;
+    color: var(--text-bright);
+    font-weight: 600;
 }
-.markdown-content h1 { font-size: 20px; margin: 16px 0 8px; }
-.markdown-content h2 { font-size: 17px; margin: 14px 0 6px; }
-.markdown-content h3 { font-size: 15px; margin: 10px 0 4px; }
-.markdown-content p  { margin: 6px 0; }
+
+.markdown-content h1 {
+    font-size: 20px;
+    margin: 16px 0 8px;
+}
+
+.markdown-content h2 {
+    font-size: 17px;
+    margin: 14px 0 6px;
+}
+
+.markdown-content h3 {
+    font-size: 15px;
+    margin: 10px 0 4px;
+}
+
+.markdown-content p {
+    margin: 6px 0;
+}
+
 .markdown-content ul,
-.markdown-content ol { margin: 6px 0; padding-left: 20px; }
-.markdown-content li { margin: 2px 0; }
-.markdown-content strong { color: var(--text-bright); font-weight: 600; }
+.markdown-content ol {
+    margin: 6px 0;
+    padding-left: 20px;
+}
+
+.markdown-content li {
+    margin: 2px 0;
+}
+
+.markdown-content strong {
+    color: var(--text-bright);
+    font-weight: 600;
+}
+
 .markdown-content code {
-  background: rgba(99, 102, 241, 0.12);
-  color: #a5b4fc;
-  padding: 2px 7px;
-  border-radius: 5px;
-  font-size: 13px;
-  font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', monospace;
+    background: rgba(99, 102, 241, 0.12);
+    color: #a5b4fc;
+    padding: 2px 7px;
+    border-radius: 5px;
+    font-size: 13px;
+    font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', monospace;
 }
+
 .markdown-content pre {
-  background: rgba(0, 0, 0, 0.4);
-  border: 1px solid var(--border-subtle);
-  padding: 14px;
-  border-radius: var(--radius-md);
-  overflow-x: auto;
-  margin: 10px 0;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--border-subtle);
+    padding: 14px;
+    border-radius: var(--radius-md);
+    overflow-x: auto;
+    margin: 10px 0;
 }
+
 .markdown-content pre code {
-  background: none;
-  padding: 0;
-  color: #c4b5fd;
+    background: none;
+    padding: 0;
+    color: #c4b5fd;
 }
+
 .markdown-content table {
-  border-collapse: collapse;
-  width: 100%;
-  margin: 10px 0;
+    border-collapse: collapse;
+    width: 100%;
+    margin: 10px 0;
 }
+
 .markdown-content th,
 .markdown-content td {
-  border: 1px solid var(--border-default);
-  padding: 8px 12px;
-  text-align: left;
+    border: 1px solid var(--border-default);
+    padding: 8px 12px;
+    text-align: left;
 }
+
 .markdown-content th {
-  background: rgba(99, 102, 241, 0.1);
-  color: var(--text-bright);
-  font-weight: 600;
+    background: rgba(99, 102, 241, 0.1);
+    color: var(--text-bright);
+    font-weight: 600;
 }
+
 .markdown-content blockquote {
-  border-left: 3px solid #6366f1;
-  padding-left: 14px;
-  margin: 8px 0;
-  color: var(--text-secondary);
+    border-left: 3px solid #6366f1;
+    padding-left: 14px;
+    margin: 8px 0;
+    color: var(--text-secondary);
 }
+
 .markdown-content a {
-  color: #818cf8;
+    color: #818cf8;
 }
+
 .markdown-content a:hover {
-  color: #a5b4fc;
-  text-decoration: underline;
+    color: #a5b4fc;
+    text-decoration: underline;
 }
+
 .markdown-content hr {
-  border: none;
-  border-top: 1px solid var(--border-subtle);
-  margin: 16px 0;
+    border: none;
+    border-top: 1px solid var(--border-subtle);
+    margin: 16px 0;
 }
 
 /* ───── 聊天气泡动画 ───── */
 .msg-enter {
-  animation: fadeInUp 0.35s var(--ease-out);
+    animation: fadeInUp 0.35s var(--ease-out);
 }
 
 /* ───── 打字指示器 ───── */
 .typing-indicator {
-  display: inline-flex;
-  gap: 4px;
-  padding: 4px 0;
+    display: inline-flex;
+    gap: 4px;
+    padding: 4px 0;
 }
+
 .typing-indicator span {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #6366f1;
-  animation: typingBounce 1.4s infinite ease-in-out;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #6366f1;
+    animation: typingBounce 1.4s infinite ease-in-out;
 }
-.typing-indicator span:nth-child(2) { animation-delay: 0.16s; }
-.typing-indicator span:nth-child(3) { animation-delay: 0.32s; }
+
+.typing-indicator span:nth-child(2) {
+    animation-delay: 0.16s;
+}
+
+.typing-indicator span:nth-child(3) {
+    animation-delay: 0.32s;
+}
 
 /* ───── 按钮覆写 (Ant Design 暗色适配) ───── */
 .ant-btn-primary {
-  background: var(--gradient-primary) !important;
-  border: none !important;
-  box-shadow: var(--shadow-glow);
-  transition: all 0.25s var(--ease-out) !important;
+    background: var(--gradient-primary) !important;
+    border: none !important;
+    box-shadow: var(--shadow-glow);
+    transition: all 0.25s var(--ease-out) !important;
 }
+
 .ant-btn-primary:hover {
-  filter: brightness(1.15);
-  box-shadow: 0 0 28px rgba(99, 102, 241, 0.35) !important;
-  transform: translateY(-1px);
+    filter: brightness(1.15);
+    box-shadow: 0 0 28px rgba(99, 102, 241, 0.35) !important;
+    transform: translateY(-1px);
 }
+
 .ant-btn-primary:disabled {
-  filter: grayscale(0.6);
-  box-shadow: none !important;
+    filter: grayscale(0.6);
+    box-shadow: none !important;
 }
 
 /* 危险按钮 */
 .ant-btn-dangerous.ant-btn-primary {
-  background: linear-gradient(135deg, #ef4444, #dc2626) !important;
-  box-shadow: 0 0 16px rgba(239, 68, 68, 0.2);
+    background: linear-gradient(135deg, #ef4444, #dc2626) !important;
+    box-shadow: 0 0 16px rgba(239, 68, 68, 0.2);
 }
 
 /* ───── Antd 组件暗色覆写 ───── */
 .ant-input,
 .ant-input-textarea .ant-input {
-  background: var(--bg-surface) !important;
-  border-color: var(--border-default) !important;
-  color: var(--text-primary) !important;
-  caret-color: #818cf8;
+    background: var(--bg-surface) !important;
+    border-color: var(--border-default) !important;
+    color: var(--text-primary) !important;
+    caret-color: #818cf8;
 }
+
 .ant-input:hover,
 .ant-input-textarea .ant-input:hover {
-  border-color: var(--border-active) !important;
+    border-color: var(--border-active) !important;
 }
+
 .ant-input:focus,
 .ant-input-textarea .ant-input:focus,
 .ant-input-focused {
-  border-color: #6366f1 !important;
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15) !important;
+    border-color: #6366f1 !important;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15) !important;
 }
+
 .ant-input::placeholder {
-  color: var(--text-muted) !important;
+    color: var(--text-muted) !important;
 }
 
 .ant-collapse {
-  background: transparent !important;
-  border: 1px solid var(--border-subtle) !important;
-  border-radius: var(--radius-md) !important;
+    background: transparent !important;
+    border: 1px solid var(--border-subtle) !important;
+    border-radius: var(--radius-md) !important;
 }
+
 .ant-collapse > .ant-collapse-item {
-  border-bottom: none !important;
+    border-bottom: none !important;
 }
+
 .ant-collapse .ant-collapse-header {
-  color: var(--text-secondary) !important;
-  padding: 8px 12px !important;
+    color: var(--text-secondary) !important;
+    padding: 8px 12px !important;
 }
+
 .ant-collapse .ant-collapse-content {
-  background: rgba(0, 0, 0, 0.2) !important;
-  border-top: 1px solid var(--border-subtle) !important;
+    background: rgba(0, 0, 0, 0.2) !important;
+    border-top: 1px solid var(--border-subtle) !important;
 }
+
 .ant-collapse .ant-collapse-content-box {
-  padding: 12px !important;
+    padding: 12px !important;
 }
 
 .ant-tag {
-  border-radius: var(--radius-full) !important;
-  font-size: 11px !important;
-  padding: 0 8px !important;
-  line-height: 20px !important;
+    border-radius: var(--radius-full) !important;
+    font-size: 11px !important;
+    padding: 0 8px !important;
+    line-height: 20px !important;
 }
 
 .ant-tabs-tab {
-  color: var(--text-secondary) !important;
-  transition: color 0.2s var(--ease-out) !important;
+    color: var(--text-secondary) !important;
+    transition: color 0.2s var(--ease-out) !important;
 }
+
 .ant-tabs-tab-active {
-  color: var(--text-bright) !important;
+    color: var(--text-bright) !important;
 }
+
 .ant-tabs-ink-bar {
-  background: var(--gradient-primary) !important;
+    background: var(--gradient-primary) !important;
 }
 
 .ant-empty-description {
-  color: var(--text-muted) !important;
+    color: var(--text-muted) !important;
 }
 
 .ant-popover-inner {
-  background: rgba(20, 20, 40, 0.95) !important;
-  backdrop-filter: blur(12px) !important;
-  border: 1px solid var(--border-subtle) !important;
-  border-radius: var(--radius-md) !important;
+    background: rgba(20, 20, 40, 0.95) !important;
+    backdrop-filter: blur(12px) !important;
+    border: 1px solid var(--border-subtle) !important;
+    border-radius: var(--radius-md) !important;
 }
+
 .ant-popover-inner-content {
-  color: var(--text-primary) !important;
+    color: var(--text-primary) !important;
 }
+
 .ant-popover-arrow::before,
 .ant-popover-arrow::after {
-  background: rgba(20, 20, 40, 0.95) !important;
+    background: rgba(20, 20, 40, 0.95) !important;
 }
 
 .ant-spin-dot-item {
-  background-color: #6366f1 !important;
+    background-color: #6366f1 !important;
 }
 
 .ant-message-notice-content {
-  background: rgba(20, 20, 40, 0.95) !important;
-  backdrop-filter: blur(12px) !important;
-  border: 1px solid var(--border-subtle) !important;
-  border-radius: var(--radius-md) !important;
-  color: var(--text-primary) !important;
-  box-shadow: var(--shadow-lg) !important;
+    background: rgba(20, 20, 40, 0.95) !important;
+    backdrop-filter: blur(12px) !important;
+    border: 1px solid var(--border-subtle) !important;
+    border-radius: var(--radius-md) !important;
+    color: var(--text-primary) !important;
+    box-shadow: var(--shadow-lg) !important;
 }
 
 .ant-layout {
-  background: var(--bg-deep) !important;
+    background: var(--bg-deep) !important;
 }
+
 .ant-layout-sider {
-  background: var(--bg-base) !important;
-  border-right: 1px solid var(--border-subtle) !important;
+    background: var(--bg-base) !important;
+    border-right: 1px solid var(--border-subtle) !important;
 }
+
 .ant-layout-header {
-  background: var(--bg-glass) !important;
-  backdrop-filter: blur(16px) !important;
-  border-bottom: 1px solid var(--border-subtle) !important;
-  height: 56px !important;
-  line-height: 56px !important;
+    background: var(--bg-glass) !important;
+    backdrop-filter: blur(16px) !important;
+    border-bottom: 1px solid var(--border-subtle) !important;
+    height: 56px !important;
+    line-height: 56px !important;
 }
 
 /* Sider 折叠按钮暗色 */
 .ant-layout-sider-trigger {
-  background: rgba(255,255,255,0.04) !important;
-  border-top: 1px solid var(--border-subtle) !important;
-  color: var(--text-muted) !important;
+    background: rgba(255, 255, 255, 0.04) !important;
+    border-top: 1px solid var(--border-subtle) !important;
+    color: var(--text-muted) !important;
 }
 
 /* ───── 响应式 ───── */
 @media (max-width: 768px) {
-  :root {
-    --radius-lg: 12px;
-    --radius-xl: 14px;
-  }
+    :root {
+        --radius-lg: 12px;
+        --radius-xl: 14px;
+    }
 }
