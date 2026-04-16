@@ -5,11 +5,58 @@
 
 import {z} from 'zod';
 import {tool} from 'ai';
+import {jsonSchema, type Schema, zodSchema} from '@ai-sdk/ui-utils';
 import {GatewayClient} from '../gateway/client';
 import {Device} from '../../shared/types';
 import {ModelConfig, getModelConfigFromEnv} from './model';
 import {getSkillByName, formatSkillContent, readSkillFile, getSkillCatalog} from '../skills/loader';
 import {validateGraph} from '../validator/graph-validator';
+
+function patchArrayItems(schema: unknown): unknown {
+    if (Array.isArray(schema)) {
+        return schema.map(patchArrayItems);
+    }
+
+    if (schema === null || typeof schema !== 'object') {
+        return schema;
+    }
+
+    const patched = Object.fromEntries(
+        Object.entries(schema).map(([key, value]) => [key, patchArrayItems(value)])
+    ) as Record<string, unknown>;
+
+    if (patched.type === 'array' && !('items' in patched)) {
+        patched.items = {};
+    }
+
+    return patched;
+}
+
+function compatibleParameters<OBJECT>(
+    schema: z.Schema<OBJECT, z.ZodTypeDef, any>
+): Schema<OBJECT> {
+    const baseSchema = zodSchema(schema);
+
+    return jsonSchema<OBJECT>(patchArrayItems(baseSchema.jsonSchema) as any, {
+        validate: value => {
+            const result = schema.safeParse(value);
+            return result.success
+                ? {success: true, value: result.data}
+                : {success: false, error: result.error};
+        },
+    });
+}
+
+function defineTool<P extends z.Schema<any, z.ZodTypeDef, any>, RESULT>(config: {
+    description?: string;
+    parameters: P;
+    execute?: (args: z.infer<P>, options: {abortSignal?: AbortSignal}) => PromiseLike<RESULT>;
+}) {
+    return tool({
+        ...config,
+        parameters: compatibleParameters(config.parameters),
+    } as any);
+}
 
 /**
  * 节点自动布局
@@ -157,7 +204,7 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
          * 思考工具
          * 仅用于复杂任务（如创建规则），简单任务不要使用
          */
-        'think': tool({
+        'think': defineTool({
             description: '仅用于复杂任务的思考（如创建规则）。简单任务（查询设备、查看规则等）不要使用此工具，直接调用相应工具即可。',
             parameters: z.object({
                 thought: z.string().describe('思考内容'),
@@ -176,7 +223,7 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
          * 向用户提问
          * 仅用于需要用户选择或确认时
          */
-        'ask_user': tool({
+        'ask_user': defineTool({
             description: '仅用于需要用户选择或确认时。简单任务不要使用。',
             parameters: z.object({
                 question: z.string().describe('问题内容'),
@@ -199,7 +246,7 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
         /**
          * 获取设备列表（精简预览）
          */
-        'get_devices': tool({
+        'get_devices': defineTool({
             description: '获取设备列表（预览模式，只返回关键字段）。如需设备能力信息，用 get_device',
             parameters: z.object({}),
             execute: async () => {
@@ -224,7 +271,7 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
          * 获取设备详情 + MIOT Spec 能力（支持批量）
          * 合并原 get_device + get_device_spec
          */
-        'get_device': tool({
+        'get_device': defineTool({
             description: '获取设备详情及 MIOT Spec 能力（siid/piid/eiid/aiid）。支持批量：传入多个 did 一次获取',
             parameters: z.object({
                 dids: z.array(z.string()).describe('设备ID数组，如 ["950058664", "2076971215"]'),
@@ -319,7 +366,7 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
         /**
          * 获取规则列表
          */
-        'get_graphs': tool({
+        'get_graphs': defineTool({
             description: '获取所有自动化规则列表',
             parameters: z.object({}),
             execute: async () => {
@@ -349,7 +396,7 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
         /**
          * 获取规则详情
          */
-        'get_graph': tool({
+        'get_graph': defineTool({
             description: '获取指定规则的详细信息，包括所有节点和连接',
             parameters: z.object({
                 id: z.string().describe('规则ID'),
@@ -373,7 +420,7 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
         /**
          * 创建规则
          */
-        'create_graph': tool({
+        'create_graph': defineTool({
             description: '创建新的自动化规则。创建前请先获取设备信息，生成方案并获得用户确认。',
             parameters: z.object({
                 name: z.string().describe('规则名称'),
@@ -444,7 +491,7 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
         /**
          * 更新规则
          */
-        'update_graph': tool({
+        'update_graph': defineTool({
             description: '更新现有规则。更新前请先获取规则详情并获得用户确认。',
             parameters: z.object({
                 id: z.string().describe('规则ID'),
@@ -527,7 +574,7 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
         /**
          * 删除规则
          */
-        'delete_graph': tool({
+        'delete_graph': defineTool({
             description: '删除指定的自动化规则。删除前请获得用户确认。',
             parameters: z.object({
                 id: z.string().describe('规则ID'),
@@ -551,7 +598,7 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
         /**
          * 启用/禁用规则
          */
-        'toggle_graph': tool({
+        'toggle_graph': defineTool({
             description: '启用或禁用指定的自动化规则',
             parameters: z.object({
                 id: z.string().describe('规则ID'),
@@ -601,7 +648,7 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
         /**
          * 获取变量列表
          */
-        'get_variables': tool({
+        'get_variables': defineTool({
             description: '获取变量列表',
             parameters: z.object({
                 scope: z.string().optional().describe('变量作用域，默认为"global"，可选"rule_xxx"'),
@@ -625,7 +672,7 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
         /**
          * 设置变量值
          */
-        'set_variable': tool({
+        'set_variable': defineTool({
             description: '设置变量的值',
             parameters: z.object({
                 id: z.string().describe('变量ID'),
@@ -654,7 +701,7 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
          * 激活 Skill（渐进式披露第二层）
          * 当任务匹配某个 skill 的描述时，使用此工具加载其完整内容
          */
-        'activate_skill': tool({
+        'activate_skill': defineTool({
             description: '激活指定的 skill，加载其完整指导内容。当任务匹配某个 skill 的描述时使用此工具。',
             parameters: z.object({
                 name: z.string().describe('skill 名称'),
@@ -684,7 +731,7 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
          * 读取 Skill 资源文件（渐进式披露第三层）
          * 读取 skill 目录中的 references/, scripts/, assets/ 等文件
          */
-        'read_skill_file': tool({
+        'read_skill_file': defineTool({
             description: '读取 skill 目录中的资源文件（如 references/ 中的详细文档）。需要先使用 activate_skill 激活 skill。',
             parameters: z.object({
                 skillName: z.string().describe('skill 名称'),
@@ -715,7 +762,7 @@ export function createTools(gatewayClient: GatewayClient, modelConfig?: ModelCon
          * 在调用 create_graph / update_graph 之前必须先调用此工具
          * 将完整的 graph JSON 传入（包含 nodes 和 cfg），返回校验结果
          */
-        'validate_graph': tool({
+        'validate_graph': defineTool({
             description: '校验规则连接完整性。创建或更新规则前必须先调用此工具。传入完整的 graph JSON（含 nodes 和 cfg），返回错误列表。如果有 error 级别的问题，必须修复后再创建。',
             parameters: z.object({
                 nodes: z.array(z.any()).describe('节点列表'),

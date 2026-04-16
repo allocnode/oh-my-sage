@@ -38,7 +38,7 @@ function parseSkillFile(filePath: string): Skill | null {
         const content = fs.readFileSync(filePath, 'utf8');
 
         // 解析 frontmatter
-        const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+        const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
         if (!frontmatterMatch) {
             console.warn(`[Skill] 无法解析 frontmatter: ${filePath}`);
             return null;
