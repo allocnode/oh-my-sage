@@ -1,4 +1,4 @@
-# Oh My Sage (智者)
+# Oh My Sage
 
 > 米家自动化极客版 AI Agent - 用自然语言控制你的智能家居
 
