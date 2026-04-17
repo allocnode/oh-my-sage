@@ -107,10 +107,12 @@ npm link
 ```json
 {
   "mcpServers": {
-    "oh-my-sage": {
-      "command": "npx",
-      "args": ["-y", "oh-my-sage-mcp"]
-    }
+     "oh-my-sage-mcp": {
+        "command": ["oh-my-sage-mcp"],
+        "environment": {
+           "GATEWAY_URL": "http://192.168.0.4"
+        }
+     }
   }
 }
 ```
