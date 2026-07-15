@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:mcp": "tsc -p tsconfig.mcp.json && chmod 755 dist/mcp/mcp/index.js",
+    "build:mcp": "tsc -p tsconfig.mcp.json && node -e \"if(process.platform!=='win32')require('fs').chmodSync('dist/mcp/mcp/index.js',0o755)\"",
     "start": "next start",
     "lint": "next lint",
     "test": "npx tsx src/test.ts"
