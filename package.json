@@ -8,7 +8,8 @@
     "build:mcp": "tsc -p tsconfig.mcp.json && node -e \"if(process.platform!=='win32')require('fs').chmodSync('dist/mcp/mcp/index.js',0o755)\"",
     "start": "next start",
     "lint": "next lint",
-    "test": "npx tsx src/test.ts"
+    "test": "npx tsx src/test.ts",
+    "test:unit": "tsx --test tests/**/*.test.ts"
   },
   "bin": {
     "oh-my-sage-mcp": "./dist/mcp/mcp/index.js"

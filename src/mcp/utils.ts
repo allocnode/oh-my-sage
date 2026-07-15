@@ -106,7 +106,14 @@ export function formatDeviceDetailsMarkdown(devices: Array<{
   modelName?: string;
   online?: boolean;
   roomName?: string;
-  triggers?: Array<{ desc: string; type: string }>;
+  triggers?: Array<{
+    desc: string;
+    type: string;
+    siid?: number;
+    piid?: number;
+    eiid?: number;
+    arguments?: Array<{ piid: number; desc: string; dtype: string; range?: unknown; list?: unknown }>;
+  }>;
   actions?: Array<{ desc: string; type: string }>;
 }>): string {
   const lines = ["## 设备详情", ""];
@@ -121,7 +128,11 @@ export function formatDeviceDetailsMarkdown(devices: Array<{
     if (device.triggers && device.triggers.length > 0) {
       lines.push("**可触发能力:**");
       for (const t of device.triggers) {
-        lines.push(`  - ${t.desc} (${t.type})`);
+        const ids = [t.siid && `siid=${t.siid}`, t.piid && `piid=${t.piid}`, t.eiid && `eiid=${t.eiid}`].filter(Boolean).join(", ");
+        lines.push(`  - ${t.desc} (${t.type}${ids ? `; ${ids}` : ""})`);
+        for (const arg of (t.arguments || [])) {
+          lines.push(`    - 参数 piid=${arg.piid}: ${arg.desc}, ${arg.dtype}${arg.list ? `, values=${JSON.stringify(arg.list)}` : ""}${arg.range ? `, range=${JSON.stringify(arg.range)}` : ""}`);
+        }
       }
       lines.push("");
     }

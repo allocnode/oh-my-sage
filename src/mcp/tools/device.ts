@@ -88,7 +88,7 @@ Error Handling:
       title: "获取设备详情",
       description: `获取指定设备的详细信息，包括 MIOT Spec 能力定义。
 
-返回设备的属性、触发事件、可执行动作等详细信息。
+返回设备的属性、触发事件（含事件参数和取值表）、可执行动作等详细信息。
 
 Args:
   - dids (string[]): 设备ID数组，支持批量查询
@@ -96,7 +96,7 @@ Args:
 
 Returns:
   - devices: 设备详情列表
-  - 包含 triggers(可触发能力), actions(可执行能力), readable(可读属性)
+  - 包含 triggers(可触发能力及事件 arguments), actions(可执行能力), readable(可读属性)
 
 Error Handling:
   - "网关未连接" - 请先调用 mijia_auth

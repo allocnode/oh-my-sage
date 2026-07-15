@@ -51,7 +51,7 @@ export async function getDevice(gateway: GatewayClient, dids: string[]): Promise
                     const specUrl = `https://miot-spec.org/miot-spec-v2/instance?type=${encodeURIComponent(device.urn)}`;
                     const specRes = await fetch(specUrl);
                     if (specRes.ok) {
-                        const specData = await specRes.json() as { services?: Array<{ iid: number; description: string; properties?: Array<{ iid: number; description: string; format: string; access?: string[]; 'value-range'?: unknown; 'value-list'?: unknown }>; events?: Array<{ iid: number; description: string }>; actions?: Array<{ iid: number; description: string; in?: unknown[] }> }> };
+                        const specData = await specRes.json() as { services?: Array<{ iid: number; description: string; properties?: Array<{ iid: number; description: string; format: string; access?: string[]; 'value-range'?: unknown; 'value-list'?: unknown }>; events?: Array<{ iid: number; description: string; arguments?: number[] }>; actions?: Array<{ iid: number; description: string; in?: unknown[] }> }> };
                         const services = specData.services || [];
 
                         const triggers: DeviceInfo['triggers'] = [];
@@ -71,7 +71,24 @@ export async function getDevice(gateway: GatewayClient, dids: string[]): Promise
                                 if (p.access?.includes('read')) readable.push(cap);
                             }
                             for (const e of (s.events || [])) {
-                                triggers.push({ siid: s.iid, eiid: e.iid, desc: `${s.description}-${e.description}`, type: 'event' as const });
+                                const properties = s.properties || [];
+                                const args = (e.arguments || []).map((piid) => {
+                                    const property = properties.find((p) => p.iid === piid);
+                                    return {
+                                        piid,
+                                        desc: property?.description || `Property ${piid}`,
+                                        dtype: property?.format || 'unknown',
+                                        range: property?.['value-range'],
+                                        list: property?.['value-list'],
+                                    };
+                                });
+                                triggers.push({
+                                    siid: s.iid,
+                                    eiid: e.iid,
+                                    desc: `${s.description}-${e.description}`,
+                                    type: 'event' as const,
+                                    ...(args.length > 0 ? { arguments: args } : {}),
+                                });
                             }
                             for (const a of (s.actions || [])) {
                                 actions.push({ siid: s.iid, aiid: a.iid, desc: `${s.description}-${a.description}`, type: 'action' as const, in: a.in });

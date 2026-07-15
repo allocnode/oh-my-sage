@@ -7,7 +7,7 @@ import {z} from 'zod';
 import {tool} from 'ai';
 import {jsonSchema, type Schema, zodSchema} from '@ai-sdk/ui-utils';
 import {GatewayClient} from '@/core';
-import {getDevices, getDevice, getGraphs, getGraph, createGraph, updateGraph, deleteGraph, toggleGraph, getVariables, setVariable, validateGraph, layoutNodes} from '@/core';
+import {callGatewayApi, getDevices, getDevice, getGraphs, getGraph, createGraph, updateGraph, deleteGraph, toggleGraph, getVariables, setVariable, validateGraph, layoutNodes} from '@/core';
 import {getSkillByName, formatSkillContent, readSkillFile, getSkillCatalog} from '../skills/loader';
 
 function patchArrayItems(schema: unknown): unknown {
@@ -106,6 +106,18 @@ export function createCoreTools(gateway: GatewayClient) {
             }),
             execute: async ({dids}) => {
                 return getDevice(gateway, dids);
+            },
+        }),
+
+        call_gateway_api: defineTool({
+            description: '仅在用户明确要求排障、发现网关接口或查询未被专用工具覆盖的只读数据时使用。只能调用已验证的只读 API；写入、删除和未知方法会被拒绝。',
+            parameters: z.object({
+                method: z.string().describe('已验证的只读网关 API 方法名，例如 getApiList、getLog、getVarScopeList'),
+                params: z.record(z.unknown()).default({}).describe('API 参数对象'),
+                timeout: z.number().int().min(1000).max(10000).default(10000).describe('超时时间（毫秒）'),
+            }),
+            execute: async ({method, params, timeout}) => {
+                return callGatewayApi(gateway, method, params, timeout);
             },
         }),
 
