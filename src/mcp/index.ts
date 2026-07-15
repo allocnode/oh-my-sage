@@ -12,6 +12,7 @@ import {
   registerAuthTools,
   registerDeviceTools,
   registerGraphTools,
+  registerMiscTools,
   registerVariableTools,
 } from "./tools/index.js";
 
@@ -34,6 +35,7 @@ function createServer(userConfig?: Config): McpServer {
   registerDeviceTools(server, gatewayManager);
   registerGraphTools(server, gatewayManager);
   registerVariableTools(server, gatewayManager);
+  registerMiscTools(server, gatewayManager);
 
   return server;
 }

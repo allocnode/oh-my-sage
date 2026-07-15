@@ -29,6 +29,13 @@ export interface DeviceInfo {
         type: 'prop' | 'event';
         range?: unknown;
         list?: unknown;
+        arguments?: Array<{
+            piid: number;
+            desc: string;
+            dtype: string;
+            range?: unknown;
+            list?: unknown;
+        }>;
     }>;
     actions?: Array<{
         siid: number;

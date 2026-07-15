@@ -12,6 +12,7 @@ export type { GatewayManager } from './gateway/manager';
 export { getDevices, getDevice } from './tools/device';
 export { getGraphs, getGraph, createGraph, updateGraph, deleteGraph, toggleGraph } from './tools/graph';
 export { getVariables, setVariable } from './tools/variable';
+export { callGatewayApi, isReadOnlyGatewayMethod } from './tools/misc';
 export { validateGraph, layoutNodes } from './tools/base';
 
 // 类型
