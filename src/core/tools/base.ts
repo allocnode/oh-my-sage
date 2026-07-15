@@ -11,6 +11,51 @@ const STATE_NODE_TYPES = new Set([
 
 const DUAL_OUTPUT_TYPES = new Set(['deviceGet', 'varGet', 'deviceGetSetVar']);
 
+const STATE_CONDITION_INPUT_TYPES = new Set(['condition', 'logicOr', 'logicAnd', 'logicNot']);
+
+function targetInfo(target: string): { id: string; port: string } | null {
+    const dotIdx = target.lastIndexOf('.');
+    if (dotIdx === -1) return null;
+    return { id: target.substring(0, dotIdx), port: target.substring(dotIdx + 1) };
+}
+
+function isDeclaredConditionInput(node: GraphNode, port: string): boolean {
+    if (!Object.prototype.hasOwnProperty.call(node.inputs || {}, port)) return false;
+    if (node.type === 'condition') return port === 'condition';
+    if (node.type === 'logicNot') return port === 'input';
+    return (node.type === 'logicOr' || node.type === 'logicAnd') && /^input\d+$/.test(port);
+}
+
+function reachesConditionInput(nodeId: string, nodeMap: Map<string, GraphNode>, visited: Set<string>): boolean {
+    if (visited.has(nodeId)) return false;
+    visited.add(nodeId);
+
+    const node = nodeMap.get(nodeId);
+    if (!node) return false;
+
+    for (const target of node.outputs?.output || []) {
+        const info = targetInfo(target);
+        if (!info) continue;
+        const targetNode = nodeMap.get(info.id);
+        if (!targetNode || !isDeclaredConditionInput(targetNode, info.port)) continue;
+        if (targetNode.type === 'condition') return true;
+        if (reachesConditionInput(targetNode.id, nodeMap, new Set(visited))) return true;
+    }
+
+    return false;
+}
+
+function canAcceptStateCondition(target: string, nodeMap: Map<string, GraphNode>): boolean {
+    const info = targetInfo(target);
+    if (!info) return false;
+
+    const targetNode = nodeMap.get(info.id);
+    if (!targetNode || !STATE_CONDITION_INPUT_TYPES.has(targetNode.type)) return false;
+    if (!isDeclaredConditionInput(targetNode, info.port)) return false;
+
+    return targetNode.type === 'condition' || reachesConditionInput(targetNode.id, nodeMap, new Set());
+}
+
 export function validateGraph(graph: Graph): ValidationError[] {
     const errors: ValidationError[] = [];
     const nodeMap = new Map<string, GraphNode>();
@@ -113,9 +158,8 @@ export function validateGraph(graph: Graph): ValidationError[] {
                 errors.push({ nodeId: node.id, type: 'tr_has_output2', level: 'error', message: 'timeRange 只有 output，没有 output2' });
             }
             for (const t of node.outputs?.output || []) {
-                const port = t.substring(t.lastIndexOf('.') + 1);
-                if (port !== 'condition') {
-                    errors.push({ nodeId: node.id, type: 'tr_wrong_target', level: 'error', message: `timeRange.output 只能连 condition.condition，当前连到 "${t}"` });
+                if (!canAcceptStateCondition(t, nodeMap)) {
+                    errors.push({ nodeId: node.id, type: 'tr_wrong_target', level: 'error', message: `timeRange.output 只能连 condition.condition 或 logicOr/logicAnd/logicNot 的条件输入，当前连到 "${t}"` });
                 }
             }
         }

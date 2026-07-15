@@ -75,12 +75,12 @@ metadata:
 | **event 节点** | 可被触发 | 有 trigger/input 端口 | deviceOutput, condition, delay |
 | **state 节点** | 不能被触发 | `inputs: {}`（空） | timeRange, alarmClock, deviceInputSetVar |
 
-**⚠️ state 节点的 outputs 只能连到 event 节点的 condition 端口，不能作为触发链的一环。**
+**⚠️ state 条件节点通常连接 `condition.condition`，也可以先进入 `logicOr` / `logicAnd` / `logicNot`，再连接 `condition.condition`。state 节点没有输入端口，不能接收事件触发。**
 
 ### ⚠️ 网关不检查连接完整性（已验证）
 
 网关 `setGraph` **只校验节点级别结构**（字段类型、必填字段），**不校验连接级别的逻辑完整性**。以下错误都能通过网关校验但在运行时不工作：
-- condition 的 condition 端口未连接 → 通过校验，但条件永远满足
+- condition 的 condition 端口未连接 → 网关允许保存，但实测不会执行 met 分支
 - deviceGet.output2 连到 state 节点 → 通过校验，但语义错误
 
 **因此，生成规则后必须自行验证连接完整性**，不能依赖网关报错。
@@ -136,7 +136,7 @@ metadata:
 ```json
 {"id":"$ID","type":"timeRange","cfg":{"name":"timeRange","version":1},"props":{"start":{"hour":$SH,"minute":$SM,"second":0},"end":{"hour":$EH,"minute":$EM,"second":0},"filter":{"day":[0,1,2,3,4,5,6]}},"inputs":{},"outputs":{"output":["$NEXT.condition"]}}
 ```
-⚠️ state 节点，`inputs: {}`。`output` **只能连到 condition.condition**。多分支时 output 数组可包含多个目标（如 `["cond2.condition","cond3.condition"]`）。禁止任何节点的 output 连到 timeRange。禁止使用 output2。
+⚠️ state 节点，`inputs: {}`。`output` 可直接连到 `condition.condition`，也可连到 `logicOr.inputN` / `logicAnd.inputN` / `logicNot.input` 后再进入 `condition.condition`。多分支时 output 数组可包含多个目标。禁止任何节点的 output 连到 timeRange。禁止使用 output2。
 
 ### delay - 延时
 ```json
@@ -148,7 +148,7 @@ metadata:
 ```json
 {"id":"$ID","type":"condition","cfg":{"name":"condition","version":1},"props":{},"inputs":{"trigger":null,"condition":null},"outputs":{"met":["$NEXT1.trigger"],"unmet":["$NEXT2.trigger"]}}
 ```
-⚠️ **`trigger` 和 `condition` 必须都有信号来源**，缺一不可。`trigger` = "当"（event 节点触发），`condition` = "如果"（state 节点提供条件值）。如果 `condition` 未连接 → 网关默认为 true，条件永远满足。如果 `trigger` 未连接 → 节点永远不会被触发。生成规则后必须遍历 outputs 数组确认两者都有来源。
+⚠️ **`trigger` 和 `condition` 必须都有信号来源**，缺一不可。`trigger` = "当"（event 节点触发），`condition` = "如果"（state/logic 节点提供条件值）。`condition` 未连接时网关虽允许保存，但实测不会执行 met 分支；`trigger` 未连接时节点不会被触发。
 
 ### signalOr - 任一事件
 ```json
@@ -158,18 +158,18 @@ metadata:
 
 ### logicOr - 满足任一条件
 ```json
-{"id":"$ID","type":"logicOr","cfg":{"name":"logicOr","version":1},"props":{},"inputs":{"input0":null,"input1":null},"outputs":{"output":["$NEXT.trigger"]}}
+{"id":"$ID","type":"logicOr","cfg":{"name":"logicOr","version":1},"props":{},"inputs":{"input0":null,"input1":null},"outputs":{"output":["$NEXT.condition"]}}
 ```
 ⚠️ inputs 值可以是 `boolean | null`（状态条件）。
 
 ### logicAnd - 满足全部条件
 ```json
-{"id":"$ID","type":"logicAnd","cfg":{"name":"logicAnd","version":1},"props":{},"inputs":{"input0":null,"input1":null},"outputs":{"output":["$NEXT.trigger"]}}
+{"id":"$ID","type":"logicAnd","cfg":{"name":"logicAnd","version":1},"props":{},"inputs":{"input0":null,"input1":null},"outputs":{"output":["$NEXT.condition"]}}
 ```
 
 ### logicNot - 状态取反
 ```json
-{"id":"$ID","type":"logicNot","cfg":{"name":"logicNot","version":1},"props":{},"inputs":{"input":null},"outputs":{"output":["$NEXT.trigger"]}}
+{"id":"$ID","type":"logicNot","cfg":{"name":"logicNot","version":1},"props":{},"inputs":{"input":null},"outputs":{"output":["$NEXT.condition"]}}
 ```
 
 ### loop - 循环

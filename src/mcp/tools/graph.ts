@@ -388,7 +388,7 @@ Args:
 - deviceGet 必须有 output 和 output2
 - condition 必须有 trigger 和 condition 两个输入源
 - delay 节点的 inputs 必须用 "input" 而非 "trigger"
-- timeRange 只能连到 condition.condition
+- timeRange 可连接 condition.condition，或经 logicOr/logicAnd/logicNot 最终连接 condition.condition
 - 所有节点的 props、inputs、outputs 必须存在
 
 Args:
