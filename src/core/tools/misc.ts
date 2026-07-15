@@ -5,21 +5,30 @@
 import { GatewayClient } from '../gateway/client';
 import type { ToolResponse } from '../types';
 
-export function isReadOnlyGatewayMethod(method: string): boolean {
-    return /^get[A-Z0-9_]/.test(method);
-}
+export const READ_ONLY_GATEWAY_METHODS = new Set([
+    'getBackupConfig',
+    'getBackupList',
+    'getBackupProgress',
+    'getDevList',
+    'getGraph',
+    'getGraphList',
+    'getLog',
+    'getVarConfig',
+    'getVarList',
+    'getVarScopeList',
+    'getVarValue',
+]);
 
 export async function callGatewayApi(
     gateway: GatewayClient,
     method: string,
     params: Record<string, unknown> = {},
-    timeout: number = 10000,
-    allowMutation: boolean = false
+    timeout: number = 10000
 ): Promise<ToolResponse<unknown>> {
-    if (!isReadOnlyGatewayMethod(method) && !allowMutation) {
+    if (!READ_ONLY_GATEWAY_METHODS.has(method)) {
         return {
             success: false,
-            error: `方法 ${method} 可能修改网关状态；如确需调用，请显式设置 allow_mutation=true`,
+            error: `方法 ${method} 不在已验证的只读 API 白名单中`,
         };
     }
 

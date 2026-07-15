@@ -18,7 +18,7 @@ export function registerMiscTools(
       title: "调用原始网关 API",
       description: `维护/排障用：直接调用米家网关原始 API 方法。
 
-默认只允许 get* 读取方法。set*/create*/delete*/load* 等可能修改状态的方法，必须由用户明确授权并设置 allow_mutation=true。
+只允许调用代码中明确列出的只读方法；写入、删除、恢复以及未知方法都会被拒绝。
 普通设备和自动化操作优先使用专用工具。
 
 只读示例：
@@ -30,30 +30,27 @@ export function registerMiscTools(
 Args:
   - method: API 方法名
   - params: 参数对象，默认 {}
-  - timeout: 超时时间毫秒，默认 10000
-  - allow_mutation: 是否允许可能修改网关状态的方法，默认 false`,
+  - timeout: 超时时间毫秒，默认 10000`,
       inputSchema: z.object({
         method: z.string().min(1).describe("API 方法名"),
         params: z.record(z.unknown()).default({}).describe("参数对象"),
         timeout: z.number().int().positive().default(10000).describe("超时时间毫秒"),
-        allow_mutation: z.boolean().default(false).describe("显式允许可能修改状态的方法"),
       }),
       annotations: {
-        readOnlyHint: false,
-        destructiveHint: true,
-        idempotentHint: false,
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
         openWorldHint: true,
       },
     },
-    async ({ method, params = {}, timeout = 10000, allow_mutation = false }) => {
+    async ({ method, params = {}, timeout = 10000 }) => {
       try {
         gatewayManager.ensureConnected();
         const result = await callGatewayApi(
           gatewayManager.gateway!,
           method,
           params,
-          timeout,
-          allow_mutation
+          timeout
         );
 
         if (!result.success) {

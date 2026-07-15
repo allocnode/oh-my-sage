@@ -19,7 +19,7 @@ test('只读 API 原样透传 method、params 和 timeout', async () => {
     });
 });
 
-test('未显式授权时拒绝写 API', async () => {
+test('拒绝写 API', async () => {
     let called = false;
     const gateway = gatewayWith(() => {
         called = true;
@@ -32,11 +32,11 @@ test('未显式授权时拒绝写 API', async () => {
     assert.equal(called, false);
 });
 
-test('显式授权后允许写 API', async () => {
+test('拒绝名称像读取方法但未进入白名单的 API', async () => {
     const gateway = gatewayWith((method) => method);
-    const result = await callGatewayApi(gateway, 'setGraph', {}, 10000, true);
+    const result = await callGatewayApi(gateway, 'getApiList');
 
-    assert.deepEqual(result, { success: true, data: 'setGraph' });
+    assert.equal(result.success, false);
 });
 
 test('网关异常转为失败响应', async () => {
