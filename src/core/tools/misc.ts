@@ -6,6 +6,7 @@ import { GatewayClient } from '../gateway/client';
 import type { ToolResponse } from '../types';
 
 export const READ_ONLY_GATEWAY_METHODS = new Set([
+    'getApiList',
     'getBackupConfig',
     'getBackupList',
     'getBackupProgress',

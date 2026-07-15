@@ -32,11 +32,11 @@ test('拒绝写 API', async () => {
     assert.equal(called, false);
 });
 
-test('拒绝名称像读取方法但未进入白名单的 API', async () => {
+test('允许已验证的 API 列表读取接口', async () => {
     const gateway = gatewayWith((method) => method);
     const result = await callGatewayApi(gateway, 'getApiList');
 
-    assert.equal(result.success, false);
+    assert.deepEqual(result, {success: true, data: 'getApiList'});
 });
 
 test('网关异常转为失败响应', async () => {
