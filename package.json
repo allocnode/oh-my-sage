@@ -8,7 +8,8 @@
     "build:mcp": "tsc -p tsconfig.mcp.json && chmod 755 dist/mcp/mcp/index.js",
     "start": "next start",
     "lint": "next lint",
-    "test": "npx tsx src/test.ts"
+    "test": "npx tsx src/test.ts",
+    "test:unit": "tsx --test tests/**/*.test.ts"
   },
   "bin": {
     "oh-my-sage-mcp": "./dist/mcp/mcp/index.js"
