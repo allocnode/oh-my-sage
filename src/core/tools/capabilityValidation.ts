@@ -1,5 +1,5 @@
 import { GatewayClient } from '../gateway/client';
-import type { DeviceListResponse, MiotEventCapability, MiotPropertyCapability } from '../types/device';
+import type { DeviceListResponse, MiotActionCapability, MiotEventCapability, MiotPropertyCapability } from '../types/device';
 import type { Graph, GraphNode, ValidationError } from '../types/graph';
 import { normalizeMiotSpec } from './device';
 
@@ -7,6 +7,7 @@ export interface DeviceCapabilities {
     urn: string;
     properties: MiotPropertyCapability[];
     events: MiotEventCapability[];
+    actions: MiotActionCapability[];
 }
 
 export interface CapabilityValidationReport {
@@ -60,6 +61,42 @@ function validateValue(node: GraphNode, property: MiotPropertyCapability, operat
     return errors;
 }
 
+function validateActionInputValue(node: GraphNode, property: MiotPropertyCapability, value: unknown): ValidationError[] {
+    if (!validScalar(value, property.dtype)) return [error(node, 'action_input_type', `${property.desc} 需要 ${property.dtype} 类型值`)];
+    if (property.list && !property.list.some((item) => item.value === value)) {
+        return [error(node, 'action_input_enum', `${property.desc} 不支持值 ${JSON.stringify(value)}；允许值 ${JSON.stringify(property.list.map((item) => item.value))}`)];
+    }
+    if (property.range && typeof value === 'number' && (value < property.range.min || value > property.range.max || ((value - property.range.min) % property.range.step !== 0))) {
+        return [error(node, 'action_input_range', `${property.desc} 值 ${value} 超出范围 ${JSON.stringify(property.range)}`)];
+    }
+    return [];
+}
+
+function validateAction(node: GraphNode, device: DeviceCapabilities): ValidationError[] {
+    const siid = node.props.siid;
+    const aiid = node.props.aiid;
+    if (typeof siid !== 'number' || typeof aiid !== 'number') return [error(node, 'missing_action', '动作节点缺少 siid 或 aiid')];
+    const action = device.actions.find((item) => item.siid === siid && item.aiid === aiid);
+    if (!action) return [error(node, 'unknown_action', `找不到动作 siid=${siid}, aiid=${aiid}`)];
+    const inputs = node.props.ins;
+    if (!Array.isArray(inputs)) return action.in.length ? [error(node, 'missing_action_input', `${action.desc} 需要输入参数`)] : [];
+
+    const errors: ValidationError[] = [];
+    for (const input of inputs) {
+        if (!input || typeof input !== 'object') { errors.push(error(node, 'invalid_action_input', `${action.desc} 的输入参数格式错误`)); continue; }
+        const entry = input as Record<string, unknown>;
+        const property = typeof entry.piid === 'number' ? action.in.find((item) => item.piid === entry.piid) : undefined;
+        if (!property) { errors.push(error(node, 'unknown_action_input', `${action.desc} 不支持输入 piid=${String(entry.piid)}`)); continue; }
+        errors.push(...validateActionInputValue(node, property, entry.value));
+    }
+    for (const property of action.in) {
+        if (!inputs.some((input) => input && typeof input === 'object' && (input as Record<string, unknown>).piid === property.piid)) {
+            errors.push(error(node, 'missing_action_input', `${action.desc} 缺少输入 ${property.desc}`));
+        }
+    }
+    return errors;
+}
+
 export function validateGraphCapabilities(nodes: GraphNode[], devices: Map<string, DeviceCapabilities>): CapabilityValidationReport {
     const errors: ValidationError[] = [];
     const warnings: ValidationError[] = [];
@@ -75,6 +112,10 @@ export function validateGraphCapabilities(nodes: GraphNode[], devices: Map<strin
         if (node.type === 'deviceInput' && typeof props.eiid === 'number') {
             const event = device.events.find((item) => item.siid === siid && item.eiid === props.eiid);
             if (!event) errors.push(error(node, 'unknown_event', `找不到事件 siid=${siid}, eiid=${String(props.eiid)}`));
+            continue;
+        }
+        if (node.type === 'deviceOutput' && typeof props.aiid === 'number') {
+            errors.push(...validateAction(node, device));
             continue;
         }
         const piid = props.piid;
@@ -103,7 +144,7 @@ export async function validateGraphCapabilitiesWithGateway(gateway: GatewayClien
                 const result = await fetch(`https://miot-spec.org/miot-spec-v2/instance?type=${encodeURIComponent(device.urn)}`);
                 if (!result.ok) throw new Error(`HTTP ${result.status}`);
                 const normalized = normalizeMiotSpec(await result.json() as { services?: Array<never> });
-                specs.set(device.urn, { urn: device.urn, properties: normalized.properties || [], events: normalized.events || [] });
+                specs.set(device.urn, { urn: device.urn, properties: normalized.properties || [], events: normalized.events || [], actions: (normalized.actions || []).flatMap((action) => action.type === 'action' && typeof action.aiid === 'number' ? [{ siid: action.siid, aiid: action.aiid, desc: action.desc, in: action.in || [] }] : []) });
             } catch (cause) {
                 errors.push({ nodeId: '(graph)', type: 'spec_unavailable', level: 'error', message: `无法读取 ${device.urn} 的 MIOT Spec: ${String(cause)}` });
             }
