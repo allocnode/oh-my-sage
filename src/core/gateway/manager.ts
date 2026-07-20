@@ -26,7 +26,10 @@ export function createGatewayManager(): GatewayManager {
         },
 
         async connect(passcode: string, gatewayUrl?: string): Promise<void> {
-            const url = gatewayUrl || process.env.GATEWAY_URL || 'http://192.168.0.5';
+            const url = gatewayUrl || process.env.GATEWAY_URL;
+            if (!url) {
+                throw new Error('未配置网关地址：请在 mijia_auth 的 gateway_url 参数中提供网关地址，或在 MCP 配置里设置 GATEWAY_URL 环境变量');
+            }
 
             if (gateway) {
                 try {
