@@ -13,9 +13,19 @@ export { getDevices, getDevice } from './tools/device';
 export { getGraphs, getGraph, createGraph, updateGraph, deleteGraph, toggleGraph } from './tools/graph';
 export { getVariables, setVariable } from './tools/variable';
 export { callGatewayApi, READ_ONLY_GATEWAY_METHODS } from './tools/misc';
+export { validateGraphCapabilitiesWithGateway } from './tools/capabilityValidation';
 export { validateGraph, layoutNodes } from './tools/base';
 
 // 类型
-export type { Device, DeviceInfo, DeviceListResponse } from './types/device';
+export type {
+    Device,
+    DeviceInfo,
+    DeviceListResponse,
+    MiotActionCapability,
+    MiotEventCapability,
+    MiotPropertyCapability,
+    MiotValueListItem,
+    MiotValueRange,
+} from './types/device';
 export type { Graph, GraphNode, GraphConfig, GraphSummary, CreateGraphInput, ValidationError } from './types/graph';
 export type { ToolResult, ToolError, ToolResponse, Variable } from './types';

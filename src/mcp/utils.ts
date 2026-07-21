@@ -3,6 +3,7 @@
  */
 
 import { z } from "zod";
+import type { MiotActionCapability, MiotEventCapability, MiotPropertyCapability } from "../core/types/device.js";
 
 // 响应格式枚举
 export const ResponseFormatSchema = z.enum(["markdown", "json"]);
@@ -106,6 +107,8 @@ export function formatDeviceDetailsMarkdown(devices: Array<{
   modelName?: string;
   online?: boolean;
   roomName?: string;
+  properties?: MiotPropertyCapability[];
+  events?: MiotEventCapability[];
   triggers?: Array<{
     desc: string;
     type: string;
@@ -114,7 +117,7 @@ export function formatDeviceDetailsMarkdown(devices: Array<{
     eiid?: number;
     arguments?: Array<{ piid: number; desc: string; dtype: string; range?: unknown; list?: unknown }>;
   }>;
-  actions?: Array<{ desc: string; type: string }>;
+  actions?: Array<{ desc: string; type: string; siid?: number; piid?: number; aiid?: number; in?: MiotActionCapability["in"] }>;
 }>): string {
   const lines = ["## 设备详情", ""];
 
@@ -124,6 +127,40 @@ export function formatDeviceDetailsMarkdown(devices: Array<{
     lines.push(`- 状态: ${device.online ? "在线 ✅" : "离线 ❌"}`);
     lines.push(`- 房间: ${device.roomName || "未分组"}`);
     lines.push("");
+
+    if (device.properties && device.properties.length > 0) {
+      lines.push("**属性能力（所有字段）:**");
+      for (const property of device.properties) {
+        const details = [
+          `siid=${property.siid}`,
+          `piid=${property.piid}`,
+          `dtype=${property.dtype}`,
+          `access=${property.access.join(",") || "none"}`,
+          property.unit && `unit=${property.unit}`,
+          property.list && `values=${JSON.stringify(property.list)}`,
+          property.range && `range=${JSON.stringify(property.range)}`,
+        ].filter(Boolean).join(", ");
+        lines.push(`  - ${property.desc} (${details})`);
+      }
+      lines.push("");
+    }
+
+    if (device.events && device.events.length > 0) {
+      lines.push("**事件能力:**");
+      for (const event of device.events) {
+        lines.push(`  - ${event.desc} (siid=${event.siid}, eiid=${event.eiid})`);
+        for (const arg of event.arguments) {
+          const details = [
+            `dtype=${arg.dtype}`,
+            arg.unit && `unit=${arg.unit}`,
+            arg.list && `values=${JSON.stringify(arg.list)}`,
+            arg.range && `range=${JSON.stringify(arg.range)}`,
+          ].filter(Boolean).join(", ");
+          lines.push(`    - 参数 piid=${arg.piid}: ${arg.desc} (${details})`);
+        }
+      }
+      lines.push("");
+    }
 
     if (device.triggers && device.triggers.length > 0) {
       lines.push("**可触发能力:**");
@@ -140,7 +177,17 @@ export function formatDeviceDetailsMarkdown(devices: Array<{
     if (device.actions && device.actions.length > 0) {
       lines.push("**可执行动作:**");
       for (const a of device.actions) {
-        lines.push(`  - ${a.desc} (${a.type})`);
+        const ids = [a.siid && `siid=${a.siid}`, a.piid && `piid=${a.piid}`, a.aiid && `aiid=${a.aiid}`].filter(Boolean).join(", ");
+        lines.push(`  - ${a.desc} (${a.type}${ids ? `; ${ids}` : ""})`);
+        for (const input of a.in || []) {
+          const details = [
+            `dtype=${input.dtype}`,
+            input.unit && `unit=${input.unit}`,
+            input.list && `values=${JSON.stringify(input.list)}`,
+            input.range && `range=${JSON.stringify(input.range)}`,
+          ].filter(Boolean).join(", ");
+          lines.push(`    - 参数 piid=${input.piid}: ${input.desc} (${details})`);
+        }
       }
       lines.push("");
     }

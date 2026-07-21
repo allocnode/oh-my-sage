@@ -11,6 +11,44 @@ export interface Device {
     roomName: string;
 }
 
+export interface MiotValueRange {
+    min: number;
+    max: number;
+    step: number;
+}
+
+export interface MiotValueListItem {
+    value: string | number | boolean;
+    description: string;
+}
+
+export interface MiotPropertyCapability {
+    siid: number;
+    piid: number;
+    desc: string;
+    dtype: string;
+    access: string[];
+    unit?: string;
+    range?: MiotValueRange;
+    list?: MiotValueListItem[];
+}
+
+export interface MiotEventArgumentCapability extends MiotPropertyCapability {}
+
+export interface MiotEventCapability {
+    siid: number;
+    eiid: number;
+    desc: string;
+    arguments: MiotEventArgumentCapability[];
+}
+
+export interface MiotActionCapability {
+    siid: number;
+    aiid: number;
+    desc: string;
+    in: MiotPropertyCapability[];
+}
+
 /** 设备详情信息 */
 export interface DeviceInfo {
     did: string;
@@ -20,6 +58,8 @@ export interface DeviceInfo {
     online: boolean;
     roomName: string;
     urn: string;
+    properties?: MiotPropertyCapability[];
+    events?: MiotEventCapability[];
     triggers?: Array<{
         siid: number;
         piid?: number;
@@ -46,13 +86,16 @@ export interface DeviceInfo {
         type: 'prop' | 'action';
         range?: unknown;
         list?: unknown;
-        in?: unknown[];
+        in?: MiotPropertyCapability[];
     }>;
     readable?: Array<{
         siid: number;
         piid: number;
         desc: string;
         dtype?: string;
+        unit?: string;
+        range?: MiotValueRange;
+        list?: MiotValueListItem[];
     }>;
     specError?: string;
 }

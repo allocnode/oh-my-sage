@@ -13,6 +13,7 @@ import {
   deleteGraph,
   toggleGraph,
   validateGraph,
+  validateGraphCapabilitiesWithGateway,
 } from "../../core/index.js";
 import {
   ResponseFormatSchema,
@@ -25,6 +26,27 @@ export function registerGraphTools(
   server: McpServer,
   gatewayManager: GatewayManager
 ): void {
+  server.registerTool(
+    "mijia_validate_graph_capabilities",
+    {
+      title: "校验规则设备能力",
+      description: "根据真实 MIOT Spec 校验规则的 DID、URN、字段权限、类型、枚举值和数值范围。创建或更新设备节点前必须先通过本校验和 mijia_validate_graph。",
+      inputSchema: z.object({
+        graph: z.object({ id: z.string(), nodes: z.array(z.any()), cfg: z.any() }).describe("完整规则对象"),
+      }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ graph }) => {
+      try {
+        gatewayManager.ensureConnected();
+        const report = await validateGraphCapabilitiesWithGateway(gatewayManager.gateway!, graph as Parameters<typeof validateGraphCapabilitiesWithGateway>[1]);
+        return { content: [{ type: "text", text: formatJson(report) }], structuredContent: { ...report }, isError: !report.valid };
+      } catch (error) {
+        return { content: [{ type: "text", text: handleError(error, "validate_graph_capabilities") }], isError: true };
+      }
+    }
+  );
+
   // ==================== mijia_get_graphs ====================
   server.registerTool(
     "mijia_get_graphs",
