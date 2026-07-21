@@ -1,12 +1,45 @@
 ---
 name: mijia-automation
-description: 米家自动化极客版规则创建指南。当用户想要创建智能场景、设备联动、定时任务、条件触发等自动化规则时使用此skill。
+description: 米家自动化极客版规则与变量管理指南。当用户想要创建智能场景、设备联动、定时任务、条件触发，或创建、读取、修改、删除自动化变量时使用此skill。
 metadata:
   author: oh-my-sage
-  version: "3.4"
+  version: "3.5"
 ---
 
 # 米家自动化规则创建
+
+## 变量生命周期能力
+
+变量管理分为三层，不能把其中一层的限制误判成网关不支持：
+
+| 层级 | 能力与限制 |
+|------|------------|
+| 网关 API | 支持 `createVar`、`deleteVar`、`getVarValue`、`getVarConfig`、`setVarValue` |
+| 专用 MCP 工具 | 使用 `mijia_create_variable`、`mijia_delete_variable`、`mijia_get_variable_value`、`mijia_get_variable_config`、`mijia_set_variable` |
+| 通用原始 API 工具 | `mijia_call_api` 故意只允许只读方法；写方法被拒绝不代表网关没有写能力 |
+
+关键规则：
+
+- 新建变量必须调用 `mijia_create_variable`；`mijia_set_variable` 只修改已存在变量，不会自动创建。
+- `varSetNumber`、`varSetString`、`deviceInputSetVar` 和 `deviceGetSetVar` 只写已存在变量，不能用作变量创建器。
+- 变量 ID 必须匹配 `^[a-zA-Z0-9]+$`，不能含下划线、连字符或中文；显示名称 `name` 可以包含中文。
+- `type` 只能是 `number` 或 `string`，初始值和后续值必须与类型一致。
+- 删除变量前检查所有规则引用；删除是不可恢复操作。
+
+### 工具缺失或写入失败时
+
+按以下顺序判断，不要直接宣布“网关无法读写变量”：
+
+1. 查看当前 MCP 工具列表是否包含上述专用变量工具。
+2. 工具缺失时检查运行中的 MCP 是否为旧构建；源码新增工具后必须重新构建并重启 MCP，当前进程不会动态注册新工具。
+3. 检查 `src/core/tools/variable.ts`、`src/mcp/tools/variable.ts` 和实际运行的 `dist`，确认功能是未实现、未构建还是未加载。
+4. `mijia_set_variable` 返回变量不存在时，改用 `mijia_create_variable`，不要尝试用规则节点自动创建。
+5. `mijia_call_api` 拒绝 `createVar` 等写方法时，改用专用工具，不要放宽通用工具的只读白名单。
+6. 若怀疑功能曾存在但被回归删除，检查 Git 历史或会话中的真实工具调用记录，再下结论。
+
+实机验证过的生命周期：创建临时变量 -> 读取配置和值 -> 修改 -> 回读 -> 删除 -> 再次读取确认不存在。创建或恢复变量工具后应完整执行一次该流程，并清理临时变量。
+
+发现网关尚未封装的新能力时，读取 [网关能力发现方法](references/gateway-capability-discovery.md)。不要靠猜测 API 名称，也不要因为当前 MCP 没有工具就判定网关不支持。
 
 ## 规则结构
 
