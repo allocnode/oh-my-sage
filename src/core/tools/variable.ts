@@ -37,7 +37,7 @@ export async function createVariable(
     scope: string = 'global'
 ): Promise<ToolResponse> {
     try {
-        await gateway.callApi('createVar', { scope, id, type, value, name: name ?? id }, 10000);
+        await gateway.callApi('createVar', { scope, id, type, value, userData: { name: name ?? id } }, 10000);
         return { success: true, message: `变量 ${id} 创建成功` };
     } catch (error) {
         return { success: false, error: `创建变量失败: ${error}` };

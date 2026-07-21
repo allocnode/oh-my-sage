@@ -24,6 +24,7 @@ metadata:
 - `varSetNumber`、`varSetString`、`deviceInputSetVar` 和 `deviceGetSetVar` 只写已存在变量，不能用作变量创建器。
 - 变量 ID 必须匹配 `^[a-zA-Z0-9]+$`，不能含下划线、连字符或中文；显示名称 `name` 可以包含中文。
 - `type` 只能是 `number` 或 `string`，初始值和后续值必须与类型一致。
+- `createVar` 的显示名称必须放在 `userData: { name }`，不能传顶层 `name`。缺少 `userData.name` 时变量虽可按 ID 读取，但极客版 UI 的变量选择器不会显示它。
 - 删除变量前检查所有规则引用；删除是不可恢复操作。
 
 ### 工具缺失或写入失败时
@@ -266,9 +267,9 @@ metadata:
 
 ### deviceGetSetVar - 查询设备赋值
 ```json
-{"id":"$ID","type":"deviceGetSetVar","cfg":{"urn":"$URN","name":"deviceGetSetVar","version":1},"props":{"did":"$DID","siid":$SIID,"piid":$PIID,"dtype":"number","scope":"global","id":"$VAR_ID"},"inputs":{"input":null},"outputs":{"output":["$NEXT1.trigger"],"output2":["$NEXT2.trigger"]}}
+{"id":"$ID","type":"deviceGetSetVar","cfg":{"urn":"$URN","name":"deviceGetSetVar","version":1},"props":{"did":"$DID","siid":$SIID,"piid":$PIID,"dtype":"number","scope":"global","id":"$VAR_ID"},"inputs":{"input":null},"outputs":{"output":["$NEXT.trigger"]}}
 ```
-⚠️ 同 deviceGet，`inputs` 用 `input`，outputs 必须有 `output` 和 `output2`。
+⚠️ `inputs` 用 `input`。极客版 UI 实测只生成 `outputs.output`，没有 `output2`；不要套用 `deviceGet` 的双输出结构。
 
 ### varChange - 变量值更新时触发（state 节点）
 ```json

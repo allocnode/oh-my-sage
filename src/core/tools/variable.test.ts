@@ -24,7 +24,7 @@ async function main(): Promise<void> {
         data: { id: 'probe1', scope: 'global', config: { type: 'number' } },
     });
     assert.deepEqual(calls, [
-        { method: 'createVar', params: { scope: 'global', id: 'probe1', type: 'number', value: 0, name: 'Probe' }, timeout: 10000 },
+        { method: 'createVar', params: { scope: 'global', id: 'probe1', type: 'number', value: 0, userData: { name: 'Probe' } }, timeout: 10000 },
         { method: 'deleteVar', params: { scope: 'global', id: 'probe1' }, timeout: 10000 },
         { method: 'getVarValue', params: { scope: 'global', id: 'probe1' }, timeout: 10000 },
         { method: 'getVarConfig', params: { scope: 'global', id: 'probe1' }, timeout: 10000 },

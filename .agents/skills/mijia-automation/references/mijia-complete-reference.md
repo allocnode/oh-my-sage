@@ -1173,12 +1173,11 @@ deviceInput → condition1
     "id": "var_brightness"
   },
   "inputs": {"input": null},
-  "outputs": {
-    "output": ["nextNode.trigger"],
-    "output2": ["fallbackNode.trigger"]
-  }
+  "outputs": {"output": ["nextNode.trigger"]}
 }
 ```
+
+极客版 UI 实测该卡片只有一个 `output`，查询成功并完成赋值后触发；它没有 `output2`，不要套用 `deviceGet` 的双分支结构。
 
 ---
 
