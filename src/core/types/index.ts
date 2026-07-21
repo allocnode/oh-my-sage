@@ -20,6 +20,8 @@ export type ToolResponse<T = unknown> = ToolResult<T> | ToolError;
 
 /** 变量 */
 export interface Variable {
+    id?: string;
+    scope?: string;
     type: 'number' | 'string';
     value: number | string;
     userData: {

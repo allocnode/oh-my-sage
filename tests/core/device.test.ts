@@ -41,18 +41,19 @@ test('解析同一 service 的事件参数并为缺失属性提供 fallback', as
 
         const event = result.data?.[0].triggers?.find((trigger) => trigger.type === 'event');
         assert.deepEqual(event?.arguments?.[0], {
+            siid: 3,
             piid: 1,
-            desc: 'button-id',
+            desc: 'remote-control-button-id',
             dtype: 'uint8',
-            range: undefined,
+            access: [],
             list: [{ value: 1, description: 'left' }, { value: 2, description: 'right' }],
         });
         assert.deepEqual(event?.arguments?.[1], {
+            siid: 3,
             piid: 99,
             desc: 'Property 99',
             dtype: 'unknown',
-            range: undefined,
-            list: undefined,
+            access: [],
         });
     } finally {
         globalThis.fetch = originalFetch;

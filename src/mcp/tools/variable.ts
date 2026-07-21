@@ -17,7 +17,7 @@ export const CreateVariableInputSchema = z.object({
   id: z.string().regex(/^[a-zA-Z0-9]+$/, "id 必须是纯字母数字，不能含下划线/连字符").describe("变量ID，纯字母数字"),
   type: z.enum(["number", "string"]).describe("变量类型"),
   value: z.union([z.string(), z.number()]).describe("初始值"),
-  name: z.string().optional().describe("显示名称，可选，默认与 id 相同"),
+  name: z.string().trim().min(1, "name 不能为空").optional().describe("显示名称，可选，默认与 id 相同"),
   scope: z.string().default("global").describe("变量作用域，默认 global"),
 }).refine(
   ({ type, value }) => typeof value === type,

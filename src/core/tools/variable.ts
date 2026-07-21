@@ -8,8 +8,11 @@ import type { ToolResponse } from '../types';
 
 export async function getVariables(gateway: GatewayClient, scope: string = 'global'): Promise<ToolResponse<Variable[]>> {
     try {
-        const variables = await gateway.callApi<Variable[]>('getVarList', { scope }, 10000);
-        return { success: true, data: Array.isArray(variables) ? variables : [] };
+        const variables = await gateway.callApi<Variable[] | Record<string, Variable>>('getVarList', { scope }, 10000);
+        const data = Array.isArray(variables)
+            ? variables
+            : Object.entries(variables || {}).map(([id, variable]) => ({ ...variable, id, scope }));
+        return { success: true, data };
     } catch (error) {
         return { success: false, error: `获取变量列表失败: ${error}` };
     }
@@ -37,7 +40,8 @@ export async function createVariable(
     scope: string = 'global'
 ): Promise<ToolResponse> {
     try {
-        await gateway.callApi('createVar', { scope, id, type, value, userData: { name: name ?? id } }, 10000);
+        const displayName = name?.trim() || id;
+        await gateway.callApi('createVar', { scope, id, type, value, userData: { name: displayName } }, 10000);
         return { success: true, message: `变量 ${id} 创建成功` };
     } catch (error) {
         return { success: false, error: `创建变量失败: ${error}` };
@@ -55,8 +59,8 @@ export async function deleteVariable(gateway: GatewayClient, id: string, scope: 
 
 export async function getVariableValue(gateway: GatewayClient, id: string, scope: string = 'global'): Promise<ToolResponse> {
     try {
-        const value = await gateway.callApi('getVarValue', { scope, id }, 10000);
-        return { success: true, data: { id, scope, value } };
+        const result = await gateway.callApi<{ value: string | number }>('getVarValue', { scope, id }, 10000);
+        return { success: true, data: { id, scope, value: result.value } };
     } catch (error) {
         return { success: false, error: `获取变量值失败: ${error}` };
     }
