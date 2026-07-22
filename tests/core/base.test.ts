@@ -101,3 +101,13 @@ test('output2 连接 state 节点仍然报错，连接 event 输入不报该错�
     assert.equal(validateGraph(invalid).some((error) => error.type === 'output2_to_state' && error.level === 'error'), true);
     assert.equal(validateGraph(valid).some((error) => error.type === 'output2_to_state'), false);
 });
+
+test('deviceGetSetVar 接受极客版 UI 生成的单 output 结构', () => {
+    const value = graph([
+        node('queryvar', 'deviceGetSetVar', { input: null }, { output: [] }, {
+            did: 'device', siid: 2, piid: 1, dtype: 'number', id: 'value1', scope: 'global',
+        }),
+    ]);
+
+    assert.deepEqual(validateGraph(value), []);
+});

@@ -9,7 +9,7 @@ const STATE_NODE_TYPES = new Set([
     'timeRange', 'alarmClock', 'onLoad', 'deviceInputSetVar', 'varChange',
 ]);
 
-const DUAL_OUTPUT_TYPES = new Set(['deviceGet', 'varGet', 'deviceGetSetVar']);
+const DUAL_OUTPUT_TYPES = new Set(['deviceGet', 'varGet']);
 
 const STATE_CONDITION_INPUT_TYPES = new Set(['condition', 'logicOr', 'logicAnd', 'logicNot']);
 
@@ -147,6 +147,10 @@ export function validateGraph(graph: Graph): ValidationError[] {
             const o = node.outputs || {};
             if (!('output' in o)) errors.push({ nodeId: node.id, type: 'missing_output', level: 'error', message: `${node.type} 必须声明 outputs.output` });
             if (!('output2' in o)) errors.push({ nodeId: node.id, type: 'missing_output2', level: 'error', message: `${node.type} 必须声明 outputs.output2` });
+        }
+
+        if (node.type === 'deviceGetSetVar' && !('output' in (node.outputs || {}))) {
+            errors.push({ nodeId: node.id, type: 'missing_output', level: 'error', message: 'deviceGetSetVar 必须声明 outputs.output' });
         }
 
         if (node.type === 'delay' && !('input' in (node.inputs || {}))) {
