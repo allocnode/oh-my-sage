@@ -5,6 +5,7 @@
 
 import {NextRequest, NextResponse} from 'next/server';
 import {getGateway, isGatewayConnected} from '@/server/gateway/shared';
+import {deleteGraph} from '@/core';
 
 export const runtime = 'nodejs';
 
@@ -160,12 +161,14 @@ export async function DELETE(request: NextRequest) {
 
         const gateway = getGateway()!;
 
-        // 调用网关 API 删除规则
-        await gateway.callApi('deleteGraph', {id}, 10000);
+        const result = await deleteGraph(gateway, id);
+        if (!result.success) {
+            return NextResponse.json(result, {status: 500});
+        }
 
         return NextResponse.json({
             success: true,
-            message: '规则已删除',
+            message: result.message || '规则已删除',
         });
     } catch (error) {
         console.error('删除规则错误:', error);

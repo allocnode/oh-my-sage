@@ -7,7 +7,7 @@ import {z} from 'zod';
 import {tool} from 'ai';
 import {jsonSchema, type Schema, zodSchema} from '@ai-sdk/ui-utils';
 import {GatewayClient} from '@/core';
-import {callGatewayApi, getDevices, getDevice, getGraphs, getGraph, createGraph, updateGraph, deleteGraph, toggleGraph, getVariables, setVariable, validateGraph, layoutNodes} from '@/core';
+import {callGatewayApi, getDevices, getDevice, getGraphs, getGraph, createGraph, updateGraph, deleteGraph, toggleGraph, getVariables, setVariable, createVariable, deleteVariable, getVariableValue, getVariableConfig, validateGraph, layoutNodes} from '@/core';
 import {getSkillByName, formatSkillContent, readSkillFile, getSkillCatalog} from '../skills/loader';
 
 function patchArrayItems(schema: unknown): unknown {
@@ -144,10 +144,14 @@ export function createCoreTools(gateway: GatewayClient) {
             parameters: z.object({
                 name: z.string().describe('规则名称'),
                 nodes: z.array(z.any()).describe('节点列表'),
+                variables: z.array(z.discriminatedUnion('type', [
+                    z.object({id: z.string().regex(/^[a-zA-Z0-9]+$/), type: z.literal('number'), value: z.number(), name: z.string().trim().min(1).optional()}),
+                    z.object({id: z.string().regex(/^[a-zA-Z0-9]+$/), type: z.literal('string'), value: z.string(), name: z.string().trim().min(1).optional()}),
+                ])).optional().describe('本规则变量定义；节点引用时 scope 使用 rule'),
                 enable: z.boolean().optional().describe('是否启用'),
             }),
-            execute: async ({name, nodes, enable = true}) => {
-                return createGraph(gateway, {name, nodes, enable});
+            execute: async ({name, nodes, variables, enable = true}) => {
+                return createGraph(gateway, {name, nodes, variables, enable});
             },
         }),
 
@@ -205,6 +209,40 @@ export function createCoreTools(gateway: GatewayClient) {
             execute: async ({id, value, scope = 'global'}) => {
                 return setVariable(gateway, id, value, scope);
             },
+        }),
+
+        create_variable: defineTool({
+            description: '创建自动化变量',
+            parameters: z.discriminatedUnion('type', [
+                z.object({id: z.string().regex(/^[a-zA-Z0-9]+$/), type: z.literal('number'), value: z.number(), name: z.string().trim().min(1).optional(), scope: z.string().optional()}),
+                z.object({id: z.string().regex(/^[a-zA-Z0-9]+$/), type: z.literal('string'), value: z.string(), name: z.string().trim().min(1).optional(), scope: z.string().optional()}),
+            ]),
+            execute: async ({id, type, value, name, scope = 'global'}) => {
+                return createVariable(gateway, id, type, value, name, scope);
+            },
+        }),
+
+        delete_variable: defineTool({
+            description: '删除自动化变量；仍被规则引用时拒绝删除',
+            parameters: z.object({
+                id: z.string().describe('变量 ID'),
+                scope: z.string().optional().describe('变量作用域'),
+            }),
+            execute: async ({id, scope = 'global'}) => {
+                return deleteVariable(gateway, id, scope);
+            },
+        }),
+
+        get_variable_value: defineTool({
+            description: '获取变量当前值',
+            parameters: z.object({id: z.string(), scope: z.string().optional()}),
+            execute: async ({id, scope = 'global'}) => getVariableValue(gateway, id, scope),
+        }),
+
+        get_variable_config: defineTool({
+            description: '获取变量配置',
+            parameters: z.object({id: z.string(), scope: z.string().optional()}),
+            execute: async ({id, scope = 'global'}) => getVariableConfig(gateway, id, scope),
         }),
 
         validate_graph: defineTool({
