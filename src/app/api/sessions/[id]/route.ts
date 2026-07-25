@@ -1,6 +1,6 @@
 /**
- * Session 详情 API
- * 获取和更新单个 session
+ * 会话详情 API
+ * 获取和更新单个会话
  */
 
 import {NextRequest, NextResponse} from 'next/server';
@@ -10,7 +10,7 @@ export const runtime = 'nodejs';
 
 /**
  * GET /api/sessions/[id]
- * 获取 session 详情和消息历史
+ * 获取会话详情和消息历史
  */
 export async function GET(
     request: NextRequest,
@@ -24,7 +24,7 @@ export async function GET(
         if (!session) {
             return NextResponse.json({
                 success: false,
-                error: 'Session 不存在',
+                error: '会话不存在',
             }, {status: 404});
         }
 
@@ -36,10 +36,10 @@ export async function GET(
             messages,
         });
     } catch (error) {
-        console.error('获取 session 详情失败:', error);
+        console.error('获取会话详情失败：', error);
         return NextResponse.json({
             success: false,
-            error: '获取 session 详情失败',
+            error: '获取会话详情失败',
             message: error instanceof Error ? error.message : '未知错误',
         }, {status: 500});
     }
@@ -47,7 +47,7 @@ export async function GET(
 
 /**
  * PATCH /api/sessions/[id]
- * 更新 session（如修改标题）
+ * 更新会话（如修改标题）
  */
 export async function PATCH(
     request: NextRequest,
@@ -73,7 +73,7 @@ export async function PATCH(
         if (!session) {
             return NextResponse.json({
                 success: false,
-                error: 'Session 不存在',
+                error: '会话不存在',
             }, {status: 404});
         }
 
@@ -85,13 +85,13 @@ export async function PATCH(
 
         return NextResponse.json({
             success: true,
-            message: 'Session 已更新',
+            message: '会话已更新',
         });
     } catch (error) {
-        console.error('更新 session 失败:', error);
+        console.error('更新会话失败：', error);
         return NextResponse.json({
             success: false,
-            error: '更新 session 失败',
+            error: '更新会话失败',
             message: error instanceof Error ? error.message : '未知错误',
         }, {status: 500});
     }
@@ -99,7 +99,7 @@ export async function PATCH(
 
 /**
  * POST /api/sessions/[id]
- * 支持 action: truncate - 截断 session 消息到指定位置
+ * 支持 action: truncate - 将会话消息截断到指定位置
  */
 export async function POST(
     request: NextRequest,
@@ -149,7 +149,7 @@ export async function POST(
             error: `未知的 action: ${action}`,
         }, {status: 400});
     } catch (error) {
-        console.error('Session POST 操作失败:', error);
+        console.error('会话 POST 操作失败：', error);
         return NextResponse.json({
             success: false,
             error: '操作失败',
@@ -160,7 +160,7 @@ export async function POST(
 
 /**
  * DELETE /api/sessions/[id]
- * 删除 session
+ * 删除会话
  */
 export async function DELETE(
     request: NextRequest,
@@ -174,13 +174,13 @@ export async function DELETE(
 
         return NextResponse.json({
             success: true,
-            message: 'Session 已删除',
+            message: '会话已删除',
         });
     } catch (error) {
-        console.error('删除 session 失败:', error);
+        console.error('删除会话失败：', error);
         return NextResponse.json({
             success: false,
-            error: '删除 session 失败',
+            error: '删除会话失败',
             message: error instanceof Error ? error.message : '未知错误',
         }, {status: 500});
     }

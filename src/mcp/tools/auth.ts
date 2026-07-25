@@ -1,5 +1,5 @@
 /**
- * MCP Server - 认证相关工具
+ * MCP 服务 - 认证相关工具
  */
 
 import { z } from "zod";
@@ -23,15 +23,15 @@ export function registerAuthTools(
 
 此工具必须在调用其他任何工具之前调用，用于建立与米家网关的安全连接。
 
-Args:
+参数：
   - passcode (string): 6位数字登录码，从网关设备上获取
   - gateway_url (string, optional): 网关地址。未提供时使用 MCP 配置的 GATEWAY_URL 环境变量；两者都没有时会返回错误，请提供地址
 
-Returns:
+返回：
   - success: boolean - 连接是否成功
   - message: string - 连接状态信息
 
-Error Handling:
+错误处理：
   - "登录码格式错误" - passcode 不是6位数字
   - "未配置网关地址" - 未提供 gateway_url 且未设置 GATEWAY_URL，请提供网关地址
   - "网关连接失败" - 无法连接到网关地址
@@ -115,7 +115,7 @@ Error Handling:
       title: "检查连接状态",
       description: `检查与米家网关的连接状态。
 
-Returns:
+返回：
   - connected: boolean - 是否已连接`,
       inputSchema: z.object({}),
       annotations: {

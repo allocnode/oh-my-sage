@@ -1,5 +1,5 @@
 /**
- * MCP Server - 配置管理
+ * MCP 服务 - 配置管理
  */
 
 import { z } from "zod";

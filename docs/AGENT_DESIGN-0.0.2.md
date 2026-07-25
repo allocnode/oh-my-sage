@@ -1,4 +1,4 @@
-# oh-my-sage Core & MCP Server 设计文档
+# oh-my-sage Core 与 MCP Server 设计文档
 
 ## 1. 背景与目标
 
@@ -15,7 +15,7 @@
 ### 1.3 设计原则
 
 - **Core 是工具库，不是 Agent**：外部已有完整的 Skill/记忆/对话能力
-- **MCP 只暴露原子工具**：get_devices、create_graph 等，不提供 chat 接口
+- **MCP 只暴露原子工具**：get_devices、create_graph 等，不提供对话接口
 - **工具必须先认证**：mijia_auth 是所有工具的前置条件
 
 ---
@@ -214,7 +214,7 @@ src/server/skills/
 |------|------|------|
 | Skill 加载 | `src/server/skills/loader.ts` | 保留，依赖 fs |
 | Skill 工具 | `src/server/ai/tools.ts` | `activate_skill`, `read_skill_file` |
-| Skill Catalog 注入 | `src/server/ai/prompts.ts` | `formatSkillCatalogForPrompt()` |
+| Skill 目录注入 | `src/server/ai/prompts.ts` | `formatSkillCatalogForPrompt()` |
 
 Core **不包含** Skill 代码：
 - Skill 加载依赖 `fs` 模块
@@ -383,7 +383,7 @@ server.registerTool("mijia_get_devices", {
 ### 4.1 设计原则
 
 - **只暴露原子工具**：外部 Agent 自己决定调用顺序和组合
-- **不提供 chat 接口**：避免 agent 套 agent
+- **不提供对话接口**：避免 Agent 嵌套 Agent
 - **单例连接**：整个 MCP 进程共享一个 Gateway 连接
 - **STDIO 日志规范**：使用 `console.error()` 记录日志，禁止使用 `console.log()`
 
@@ -840,13 +840,13 @@ dist/mcp/
 
 Web 端**逐步迁移**使用 Core：
 
-1. **Gateway 层**：re-export from Core
-2. **Tools 层**：使用 `tools-adapter.ts` 生成 AI SDK 工具
+1. **Gateway 层**：从 Core 重新导出
+2. **工具层**：使用 `tools-adapter.ts` 生成 AI SDK 工具
 3. **Agent 层**：使用 Core 工具函数，无需改动
 
 ### 5.2 具体改动
 
-#### 5.2.1 Gateway re-export
+#### 5.2.1 Gateway 重新导出
 
 ```typescript
 // src/server/gateway/client.ts
@@ -855,7 +855,7 @@ Web 端**逐步迁移**使用 Core：
 export { GatewayClient } from '@/core';
 ```
 
-#### 5.2.2 Gateway re-export
+#### 5.2.2 Gateway 重新导出
 
 ```typescript
 // src/server/gateway/client.ts
@@ -888,7 +888,7 @@ export function isGatewayConnected() {
 }
 ```
 
-#### 5.2.4 Tools 适配器
+#### 5.2.4 工具适配器
 
 tools-adapter.ts 是**关键适配层**，需要合并 Core 工具和 Agent 专用工具：
 
@@ -1052,9 +1052,9 @@ export function readSkillFile(skillName: string, filePath: string): string | nul
 
 ### 5.3 迁移顺序
 
-1. **Phase 1**：创建 Core，Web 端 gateway 改为 re-export
-2. **Phase 2**：抽取 tools 函数到 Core，Web 使用 tools-adapter
-3. **Phase 3**：验证 Web 和 MCP 功能一致
+1. **阶段 1**：创建 Core，Web 端 gateway 改为从 Core 重新导出
+2. **阶段 2**：抽取工具函数到 Core，Web 使用 tools-adapter
+3. **阶段 3**：验证 Web 和 MCP 功能一致
 
 ---
 
@@ -1175,7 +1175,7 @@ Core 使用主项目的依赖，无需单独的 package.json：
 
 ## 9. 实施计划
 
-### Phase 1: Core 模块 (2-3 天)
+### 阶段 1：Core 模块（2-3 天）
 
 1. **创建 core 目录结构**
    ```
@@ -1201,7 +1201,7 @@ Core 使用主项目的依赖，无需单独的 package.json：
    - 复制 `src/server/gateway/client.ts` 到 `src/core/gateway/`
    - 新建 `src/core/gateway/manager.ts`
 
-   **Tools 层**（从 `src/server/ai/tools.ts` 拆分）：
+   **工具层**（从 `src/server/ai/tools.ts` 拆分）：
    - `device.ts`: `getDevices`, `getDevice`
    - `graph.ts`: `getGraphs`, `getGraph`, `createGraph`, `updateGraph`, `deleteGraph`, `toggleGraph`
    - `variable.ts`: `getVariables`, `setVariable`
@@ -1220,10 +1220,10 @@ Core 使用主项目的依赖，无需单独的 package.json：
    // ... 其他导出
    ```
 
-### Phase 2: Web 端迁移 (1 天)
+### 阶段 2：Web 端迁移（1 天）
 
-1. **Gateway 层改为 re-export from Core**
-   - `src/server/gateway/client.ts` → re-export from core
+1. **Gateway 层改为从 Core 重新导出**
+   - `src/server/gateway/client.ts` → 从 Core 重新导出
    - `src/server/gateway/shared.ts` → 使用 createGatewayManager
 
 2. **创建 tools-adapter.ts**
@@ -1234,7 +1234,7 @@ Core 使用主项目的依赖，无需单独的 package.json：
    - 启动 Web，测试登录、对话、工具调用
    - **重点测试 Skill 功能**：激活 Skill、读取 Skill 文件等
 
-### Phase 3: MCP Server (1-2 天)
+### 阶段 3：MCP Server（1-2 天）
 
 1. **创建 mcp 目录**
    - 在 `src/mcp/` 下实现（TypeScript + ESM）
@@ -1246,7 +1246,7 @@ Core 使用主项目的依赖，无需单独的 package.json：
 3. **测试验证**
    - 使用 OpenCode/Claude Code 连接测试
 
-### Phase 4: 文档 (1 天)
+### 阶段 4：文档（1 天）
 
 - [ ] 更新 README
 - [ ] 编写 MCP 使用指南

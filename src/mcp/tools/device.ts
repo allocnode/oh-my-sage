@@ -1,5 +1,5 @@
 /**
- * MCP Server - 设备管理工具
+ * MCP 服务 - 设备管理工具
  */
 
 import { z } from "zod";
@@ -27,14 +27,14 @@ export function registerDeviceTools(
 
 返回设备的基本信息，包括ID、名称、型号、在线状态和房间信息。
 
-Args:
+参数：
   - response_format (string, optional): 输出格式，"markdown" 或 "json"，默认 "markdown"
 
-Returns:
+返回：
   - devices: 设备列表
   - count: 设备数量
 
-Error Handling:
+错误处理：
   - "网关未连接" - 请先调用 mijia_auth`,
       inputSchema: z.object({
         response_format: ResponseFormatSchema.optional().default("markdown").describe("输出格式"),
@@ -90,15 +90,15 @@ Error Handling:
 
 返回完整 MIOT Spec 能力：所有属性的读写订阅权限、类型、单位、枚举取值、数值范围，以及事件参数和动作输入参数。排查设备映射时优先使用本工具，无需先读取日志。
 
-Args:
+参数：
   - dids (string[]): 设备ID数组，支持批量查询
   - response_format (string, optional): 输出格式，默认 "markdown"
 
-Returns:
+返回：
   - devices: 设备详情列表
   - 包含 properties(所有字段约束), events(事件及参数), triggers, actions(含输入参数), readable
 
-Error Handling:
+错误处理：
   - "网关未连接" - 请先调用 mijia_auth
   - "设备不存在" - 指定的设备ID不存在`,
       inputSchema: z.object({

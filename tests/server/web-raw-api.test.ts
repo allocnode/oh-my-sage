@@ -9,7 +9,7 @@ function gatewayWith(handler: (method: string, params: Record<string, unknown>, 
     } as unknown as GatewayClient;
 }
 
-test('Web Agent 可以调用白名单内的原始读取 API', async () => {
+test('网页端智能体可以调用白名单内的原始读取 API', async () => {
     const gateway = gatewayWith((method, params, timeout) => ({method, params, timeout}));
     const tools = createCoreTools(gateway) as any;
 
@@ -25,7 +25,7 @@ test('Web Agent 可以调用白名单内的原始读取 API', async () => {
     });
 });
 
-test('Web Agent 无法绕过原始 API 的只读白名单', async () => {
+test('网页端智能体无法绕过原始 API 的只读白名单', async () => {
     let called = false;
     const gateway = gatewayWith(() => {
         called = true;

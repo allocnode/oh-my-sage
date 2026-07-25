@@ -19,4 +19,4 @@ assert.match(output, /unit=minutes/);
 assert.match(output, /values=\[{"value":2,"description":"2 Minutes"}\]/);
 assert.match(output, /range=\{"min":1,"max":100,"step":1\}/);
 assert.match(output, /参数 piid=3: Light-Brightness/);
-console.log('device Markdown formatting tests passed');
+console.log('设备 Markdown 格式化测试通过');

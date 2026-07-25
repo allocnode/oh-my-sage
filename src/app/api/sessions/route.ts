@@ -1,5 +1,5 @@
 /**
- * Session API
+ * 会话 API
  * 管理会话列表
  */
 
@@ -10,7 +10,7 @@ export const runtime = 'nodejs';
 
 /**
  * GET /api/sessions
- * 获取 session 列表
+ * 获取会话列表
  */
 export async function GET() {
     try {
@@ -22,10 +22,10 @@ export async function GET() {
             sessions,
         });
     } catch (error) {
-        console.error('获取 session 列表失败:', error);
+        console.error('获取会话列表失败：', error);
         return NextResponse.json({
             success: false,
-            error: '获取 session 列表失败',
+            error: '获取会话列表失败',
             message: error instanceof Error ? error.message : '未知错误',
             sessions: [],
         }, {status: 500});
@@ -34,7 +34,7 @@ export async function GET() {
 
 /**
  * POST /api/sessions
- * 创建新 session
+ * 创建新会话
  */
 export async function POST(request: NextRequest) {
     try {
@@ -49,10 +49,10 @@ export async function POST(request: NextRequest) {
             session,
         });
     } catch (error) {
-        console.error('创建 session 失败:', error);
+        console.error('创建会话失败：', error);
         return NextResponse.json({
             success: false,
-            error: '创建 session 失败',
+            error: '创建会话失败',
             message: error instanceof Error ? error.message : '未知错误',
         }, {status: 500});
     }
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
 
 /**
  * DELETE /api/sessions?id=xxx
- * 删除 session
+ * 删除会话
  */
 export async function DELETE(request: NextRequest) {
     try {
@@ -70,7 +70,7 @@ export async function DELETE(request: NextRequest) {
         if (!id) {
             return NextResponse.json({
                 success: false,
-                error: '缺少 session ID',
+                error: '缺少会话 ID',
             }, {status: 400});
         }
 
@@ -79,13 +79,13 @@ export async function DELETE(request: NextRequest) {
 
         return NextResponse.json({
             success: true,
-            message: 'Session 已删除',
+            message: '会话已删除',
         });
     } catch (error) {
-        console.error('删除 session 失败:', error);
+        console.error('删除会话失败：', error);
         return NextResponse.json({
             success: false,
-            error: '删除 session 失败',
+            error: '删除会话失败',
             message: error instanceof Error ? error.message : '未知错误',
         }, {status: 500});
     }

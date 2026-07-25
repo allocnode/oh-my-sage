@@ -1,5 +1,5 @@
 /**
- * Chat API
+ * 对话 API
  * 使用已建立的 WebSocket 连接进行对话
  */
 
@@ -39,11 +39,11 @@ export async function POST(request: NextRequest) {
         const config = getModelConfigFromEnv();
         const agent = new Agent(gateway, config);
 
-        // 如果有 sessionId，加载历史
+        // 如果有 sessionId，则加载历史记录
         if (sessionId) {
             await agent.loadSession(sessionId);
         } else {
-            // 如果没有 sessionId，创建一个新的
+            // 如果没有 sessionId，则创建新会话
             const store = getSessionStore();
             const newSession = await store.createSession();
             agent.setSession(newSession.id);
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
         });
 
     } catch (error) {
-        console.error('Chat API error:', error);
+        console.error('对话 API 出错：', error);
         return new Response(
             JSON.stringify({error: String(error)}),
             {status: 500, headers: {'Content-Type': 'application/json'}}

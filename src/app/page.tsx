@@ -82,7 +82,7 @@ export default function HomePage() {
                 setSessions(result.sessions || []);
             }
         } catch (error) {
-            console.error('加载 session 列表失败:', error);
+            console.error('加载会话列表失败：', error);
         } finally {
             setSessionsLoading(false);
         }
@@ -119,7 +119,7 @@ export default function HomePage() {
                 setCurrentMessages(result.messages || []);
             }
         } catch (error) {
-            message.error('加载 session 消息失败');
+            message.error('加载会话消息失败');
         }
     };
 
@@ -133,10 +133,10 @@ export default function HomePage() {
                     setActiveSessionId(undefined);
                     setCurrentMessages([]);
                 }
-                message.success('Session 已删除');
+                message.success('会话已删除');
             }
         } catch (error) {
-            message.error('删除 session 失败');
+            message.error('删除会话失败');
         }
     };
 
@@ -243,7 +243,7 @@ export default function HomePage() {
             Oh My Sage
           </span>
                     <Text style={{color: 'var(--text-muted)', fontSize: 12}}>
-                        米家自动化极客版 AI Agent
+                        米家自动化极客版 AI 智能助手
                     </Text>
                 </Space>
                 <Space size={6}>
@@ -339,7 +339,7 @@ export default function HomePage() {
                             />
                         </div>
 
-                        {/* Session 面板 */}
+                        {/* 会话面板 */}
                         <div
                             className="glass-panel app-session-panel"
                             style={{

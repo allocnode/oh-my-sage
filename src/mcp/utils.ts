@@ -1,5 +1,5 @@
 /**
- * MCP Server - 工具函数
+ * MCP 服务 - 工具函数
  */
 
 import { z } from "zod";

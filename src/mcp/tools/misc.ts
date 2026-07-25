@@ -1,5 +1,5 @@
 /**
- * MCP Server - maintenance/debug tools.
+ * MCP 服务 - 维护和调试工具。
  */
 
 import { z } from "zod";
@@ -27,7 +27,7 @@ export function registerMiscTools(
 - getLog: {"num":0}
 - getBackupList: {"from":"fds"}
 
-Args:
+参数：
   - method: API 方法名
   - params: 参数对象，默认 {}
   - timeout: 超时时间毫秒，默认 10000`,

@@ -23,7 +23,7 @@ function node(
     return {id, type, cfg: {name: type, version: 1}, props: {}, inputs, outputs};
 }
 
-test('Web validate_graph 接受已验证的 timeRange 条件链', async () => {
+test('网页端 validate_graph 接受已验证的 timeRange 条件链', async () => {
     const tools = createCoreTools({} as GatewayClient) as any;
     const result = await tools.validate_graph.execute({
         cfg,
@@ -38,7 +38,7 @@ test('Web validate_graph 接受已验证的 timeRange 条件链', async () => {
     assert.deepEqual(result, {success: true, valid: true, message: '规则校验通过'});
 });
 
-test('Web validate_graph 仍拒绝 output2 连接状态节点', async () => {
+test('网页端 validate_graph 仍拒绝 output2 连接状态节点', async () => {
     const tools = createCoreTools({} as GatewayClient) as any;
     const result = await tools.validate_graph.execute({
         cfg,

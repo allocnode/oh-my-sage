@@ -1,5 +1,5 @@
 /**
- * Core - maintenance/debug tools.
+ * 核心模块 - 维护和调试工具。
  */
 
 import { GatewayClient } from '../gateway/client';

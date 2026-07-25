@@ -4,8 +4,8 @@
 
 本次重构解决4个核心问题：
 1. **解耦登录与设备加载** - 登录只认证，首页加载设备
-2. **Session 持久化** - 保存对话历史，支持恢复对话
-3. **Session 列表 UI** - 替换右侧进度面板
+2. **会话持久化** - 保存对话历史，支持恢复对话
+3. **会话列表 UI** - 替换右侧进度面板
 4. **Graph 管理** - 展示和管理自动化规则
 
 ---
@@ -21,7 +21,7 @@ LoginPage → POST /api/devices (登录+获取设备耦合)
 ```
 
 - `POST /api/devices` 同时处理登录和设备获取
-- 登录成功后没有 loading 状态加载设备
+- 登录成功后没有加载状态
 
 ### 目标架构
 
@@ -108,7 +108,7 @@ const handleLoginSuccess = async (code: string) => {
 
 ---
 
-## 2. Session 持久化
+## 2. 会话持久化
 
 ### 现有问题
 
@@ -127,7 +127,7 @@ const handleLoginSuccess = async (code: string) => {
 
 ### 数据结构
 
-#### index.json - Session 索引
+#### index.json - 会话索引
 
 ```typescript
 interface SessionIndex {
@@ -168,7 +168,7 @@ interface ToolCall {
 }
 ```
 
-### Session Store 实现
+### 会话存储实现
 
 **文件**: `src/server/session/store.ts`
 
@@ -205,7 +205,7 @@ class SessionStore {
 
 #### GET /api/sessions
 
-获取 session 列表
+获取会话列表
 
 ```typescript
 // 响应
@@ -217,7 +217,7 @@ class SessionStore {
 
 #### POST /api/sessions
 
-创建新 session
+创建新会话
 
 ```typescript
 // 请求
@@ -234,7 +234,7 @@ class SessionStore {
 
 #### GET /api/sessions/[id]
 
-获取 session 详情和消息历史
+获取会话详情和消息历史
 
 ```typescript
 // 响应
@@ -247,11 +247,11 @@ class SessionStore {
 
 #### DELETE /api/sessions/[id]
 
-删除 session
+删除会话
 
 #### PATCH /api/sessions/[id]
 
-更新 session（如修改标题）
+更新会话（如修改标题）
 
 ### Agent 改造
 
@@ -309,7 +309,7 @@ export async function POST(request: NextRequest) {
 
 ---
 
-## 3. Session 列表 UI
+## 3. 会话列表 UI
 
 ### 现有组件
 
@@ -558,12 +558,12 @@ const handleDeleteGraph = async (id: string) => {
 | 文件 | 说明 |
 |------|------|
 | `src/app/api/auth/route.ts` | 认证 API |
-| `src/app/api/sessions/route.ts` | Session 列表 API |
-| `src/app/api/sessions/[id]/route.ts` | Session 详情 API |
-| `src/server/session/store.ts` | Session 存储实现 |
-| `src/components/SessionPanel.tsx` | Session 列表组件 |
+| `src/app/api/sessions/route.ts` | 会话列表 API |
+| `src/app/api/sessions/[id]/route.ts` | 会话详情 API |
+| `src/server/session/store.ts` | 会话存储实现 |
+| `src/components/SessionPanel.tsx` | 会话列表组件 |
 | `src/components/GraphPanel.tsx` | Graph 管理组件 |
-| `.sessionstore/` | Session 存储目录（运行时创建） |
+| `.sessionstore/` | 会话存储目录（运行时创建） |
 
 ### 修改文件
 
@@ -571,7 +571,7 @@ const handleDeleteGraph = async (id: string) => {
 |------|------|
 | `src/app/api/devices/route.ts` | 删除 POST 方法 |
 | `src/app/api/chat/route.ts` | 支持 sessionId |
-| `src/server/agent/agent.ts` | 集成 session store |
+| `src/server/agent/agent.ts` | 集成会话存储 |
 | `src/app/page.tsx` | UI 布局改造 |
 | `src/components/LoginPage.tsx` | 调用 /api/auth |
 | `src/components/Chat.tsx` | 支持初始消息 |
@@ -587,28 +587,28 @@ const handleDeleteGraph = async (id: string) => {
 
 ## 实现顺序
 
-### Phase 1: 解耦登录（低风险）
+### 阶段 1：解耦登录（低风险）
 
 1. 创建 `src/app/api/auth/route.ts`
 2. 修改 `src/app/api/devices/route.ts`（删除 POST）
 3. 修改 `src/components/LoginPage.tsx`
-4. 修改 `src/app/page.tsx`（添加 loading 状态）
+4. 修改 `src/app/page.tsx`（添加加载状态）
 
-### Phase 2: Session 存储（核心功能）
+### 阶段 2：会话存储（核心功能）
 
 1. 创建 `src/server/session/store.ts`
 2. 创建 `src/app/api/sessions/route.ts`
 3. 创建 `src/app/api/sessions/[id]/route.ts`
 4. 修改 `src/server/agent/agent.ts`
 
-### Phase 3: Session UI（用户体验）
+### 阶段 3：会话 UI（用户体验）
 
 1. 创建 `src/components/SessionPanel.tsx`
 2. 删除 `src/components/ProgressPanel.tsx`
 3. 修改 `src/components/Chat.tsx`
 4. 修改 `src/app/page.tsx`
 
-### Phase 4: Graph 管理（增强功能）
+### 阶段 4：Graph 管理（增强功能）
 
 1. 创建 `src/components/GraphPanel.tsx`
 2. 修改 `src/components/DevicePanel.tsx`
@@ -661,7 +661,7 @@ agent.run(message)
 流式输出响应
 ```
 
-### 切换 Session 流程
+### 切换会话流程
 
 ```
 用户点击 session
@@ -679,7 +679,7 @@ Chat 组件: setMessages(转换后的消息)
 
 ## 注意事项
 
-1. **并发安全**: Session 写入时需要加锁或使用 append-only 模式
+1. **并发安全**: 会话写入时需要加锁或使用仅追加模式
 2. **文件大小**: 长对话的 JSONL 文件可能很大，考虑分页加载
 3. **标题生成**: 可以使用 LLM 生成，也可以简单取前几条消息
 4. **向后兼容**: 保留原有 API 接口，新增功能不影响现有逻辑
@@ -691,9 +691,9 @@ Chat 组件: setMessages(转换后的消息)
 
 1. 登录流程只认证，不获取设备
 2. 首页显示设备加载状态
-3. 创建新 session 后可以开始对话
-4. 历史 session 消息可以正确恢复
-5. Session 列表显示正确的标题和摘要
+3. 创建新会话后可以开始对话
+4. 历史会话消息可以正确恢复
+5. 会话列表显示正确的标题和摘要
 6. 规则列表正确显示
 7. 规则启用/禁用状态同步
-8. 删除 session 后清理文件
+8. 删除会话后清理文件

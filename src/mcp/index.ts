@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * oh-my-sage MCP Server
+ * oh-my-sage MCP 服务
  * 米家自动化极客版 MCP 服务
  */
 
@@ -17,7 +17,7 @@ import {
 } from "./tools/index.js";
 
 /**
- * 创建并配置 MCP Server
+ * 创建并配置 MCP 服务
  */
 function createServer(userConfig?: Config): McpServer {
   const config = getConfig(userConfig);
@@ -27,7 +27,7 @@ function createServer(userConfig?: Config): McpServer {
     version: "1.0.0",
   });
 
-  // 创建 Gateway 管理器
+  // 创建网关管理器
   const gatewayManager = createGatewayManager();
 
   // 注册所有工具
@@ -41,7 +41,7 @@ function createServer(userConfig?: Config): McpServer {
 }
 
 /**
- * 启动 MCP Server
+ * 启动 MCP 服务
  */
 async function main(): Promise<void> {
   // 支持从环境变量读取配置
@@ -53,12 +53,12 @@ async function main(): Promise<void> {
   const transport = new StdioServerTransport();
 
   await server.connect(transport);
-  console.error("oh-my-sage MCP Server running on stdio");
+  console.error("oh-my-sage MCP 服务已通过 stdio 运行");
 }
 
 // 启动服务器
 main().catch((error) => {
-  console.error("Fatal error:", error);
+  console.error("致命错误：", error);
   process.exit(1);
 });
 

@@ -89,7 +89,7 @@ export default function SessionPanel({
                 </div>
             </div>
 
-            {/* Session 列表 */}
+            {/* 会话列表 */}
             <div style={{flex: 1, minHeight: 0, overflow: 'auto', padding: '8px'}}>
                 {loading ? (
                     <div style={{textAlign: 'center', padding: 40}}>

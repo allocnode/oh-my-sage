@@ -85,7 +85,7 @@ export default function LoginPage({onLoginSuccess}: LoginPageProps) {
                     animation: 'fadeInUp 0.6s var(--ease-out)',
                 }}
             >
-                {/* Logo */}
+                {/* 标志 */}
                 <div style={{
                     width: 64, height: 64, margin: '0 auto 24px',
                     borderRadius: 'var(--radius-lg)',
@@ -103,7 +103,7 @@ export default function LoginPage({onLoginSuccess}: LoginPageProps) {
                     Oh My Sage
                 </h1>
                 <Text style={{color: 'var(--text-muted)', fontSize: 13, display: 'block', marginBottom: 32}}>
-                    米家自动化极客版 AI Agent
+                    米家自动化极客版 AI 智能助手
                 </Text>
 
                 <div style={{marginBottom: 20}}>

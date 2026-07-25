@@ -1,5 +1,5 @@
 /**
- * Core - 设备工具
+ * 核心模块 - 设备工具
  */
 
 import { GatewayClient } from '../gateway/client';
@@ -73,7 +73,7 @@ function propertyCapability(siid: number, serviceDescription: string, property: 
 
 export function normalizeMiotSpec(spec: MiotSpec): Pick<DeviceInfo, 'properties' | 'events' | 'triggers' | 'actions' | 'readable'> {
     if (!Array.isArray(spec.services) || spec.services.length === 0) {
-        throw new Error('MIOT Spec does not contain services');
+        throw new Error('MIOT Spec 不包含 services');
     }
 
     const properties: MiotPropertyCapability[] = [];
@@ -107,7 +107,7 @@ export function normalizeMiotSpec(spec: MiotSpec): Pick<DeviceInfo, 'properties'
                 return property || {
                     siid: service.iid,
                     piid,
-                    desc: `Property ${piid}`,
+                    desc: `属性 ${piid}`,
                     dtype: 'unknown',
                     access: [],
                 };
@@ -132,7 +132,7 @@ export function normalizeMiotSpec(spec: MiotSpec): Pick<DeviceInfo, 'properties'
             const inputs = (action.in || []).map((piid) => serviceProperties.find((property) => property.piid === piid) || {
                 siid: service.iid,
                 piid,
-                desc: `Property ${piid}`,
+                desc: `属性 ${piid}`,
                 dtype: 'unknown',
                 access: [],
             });

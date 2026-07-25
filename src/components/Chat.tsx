@@ -163,7 +163,7 @@ export default function Chat({
                 signal: abortController.signal,
             });
 
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            if (!response.ok) throw new Error(`HTTP 错误，状态码：${response.status}`);
 
             const reader = response.body?.getReader();
             if (!reader) throw new Error('无法读取响应流');
@@ -572,7 +572,7 @@ export default function Chat({
                             你好！我是智者
                         </div>
                         <Text style={{color: 'var(--text-muted)', fontSize: 14, display: 'block', marginBottom: 28}}>
-                            米家自动化极客版 AI 助手
+                            米家自动化极客版 AI 智能助手
                         </Text>
                         <Space direction="vertical" size={10}>
                             <Button
@@ -695,7 +695,7 @@ export default function Chat({
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                             onKeyDown={handleKeyDown}
-                            placeholder={waitingInput ? "选择上方选项，或输入自定义回复..." : "输入消息... (Enter 发送, Shift+Enter 换行)"}
+                            placeholder={waitingInput ? "选择上方选项，或输入自定义回复..." : "输入消息...（Enter 发送，Shift+Enter 换行）"}
                             autoSize={{minRows: 1, maxRows: 4}}
                             disabled={isLoading && !waitingInput}
                             style={{

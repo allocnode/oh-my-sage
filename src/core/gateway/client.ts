@@ -1,5 +1,5 @@
 /**
- * Core - Gateway 客户端
+ * 核心模块 - 网关客户端
  * 封装 ECJPAKE + AES-GCM + WebSocket 通信
  */
 
@@ -30,8 +30,8 @@ class AESGCMCipher {
     private decryptCounter: number = 0;
 
     constructor(key: Buffer, nonce: Buffer) {
-        if (key.length !== 16) throw new Error('key must be 16 bytes');
-        if (nonce.length !== 8) throw new Error('nonce must be 8 bytes');
+        if (key.length !== 16) throw new Error('key 必须为 16 字节');
+        if (nonce.length !== 8) throw new Error('nonce 必须为 8 字节');
         this.key = key;
         this.nonce = nonce;
     }
@@ -58,9 +58,9 @@ class AESGCMCipher {
     }
 
     decrypt(data: Buffer): Buffer {
-        if (data.length < 20) throw new Error('Data too short');
+        if (data.length < 20) throw new Error('数据过短');
         const counter = data.readUInt32LE(0);
-        if (counter <= this.decryptCounter) throw new Error('Replay attack');
+        if (counter <= this.decryptCounter) throw new Error('检测到重放攻击');
         this.decryptCounter = counter;
 
         const ciphertext = data.slice(4, data.length - 16);
@@ -82,7 +82,7 @@ function compress(data: Buffer): Buffer {
 }
 
 function decompress(data: Buffer): Buffer {
-    if (data.length < 4) throw new Error('Data too short');
+    if (data.length < 4) throw new Error('数据过短');
     return inflateRawSync(data.slice(4));
 }
 
@@ -128,7 +128,7 @@ class ECJPAKE {
     }
 
     private decodePoint(data: Buffer): unknown {
-        if (data[0] !== 65 || data[1] !== 4) throw new Error('Invalid point format');
+        if (data[0] !== 65 || data[1] !== 4) throw new Error('无效的椭圆曲线点格式');
         return EC.keyFromPublic({
             x: data.slice(2, 34).toString('hex'),
             y: data.slice(34, 66).toString('hex')
@@ -180,7 +180,7 @@ class ECJPAKE {
     }
 
     writeRoundOne(): Buffer {
-        if (this.roundOneSent) throw new Error('Round one already sent');
+        if (this.roundOneSent) throw new Error('第一轮数据已发送');
         this.roundOneSent = true;
 
         const g = EC.g;
@@ -201,7 +201,7 @@ class ECJPAKE {
     }
 
     readRoundOne(data: Buffer): void {
-        if (this.roundOneReceived) throw new Error('Round one already received');
+        if (this.roundOneReceived) throw new Error('第一轮数据已接收');
         this.roundOneReceived = true;
 
         const g = EC.g;
@@ -211,14 +211,14 @@ class ECJPAKE {
         const zkp2 = this.decodeZKP(data.slice(231, 330));
 
         if (!this.verifyZKP(g, this.g_x3, zkp1.v, zkp1.r, this.peerRole))
-            throw new Error('ZKP verification failed for g_x3');
+            throw new Error('g_x3 的 ZKP 验证失败');
         if (!this.verifyZKP(g, this.g_x4, zkp2.v, zkp2.r, this.peerRole))
-            throw new Error('ZKP verification failed for g_x4');
+            throw new Error('g_x4 的 ZKP 验证失败');
     }
 
     writeRoundTwo(): Buffer {
-        if (this.roundTwoSent) throw new Error('Round two already sent');
-        if (!this.roundOneSent || !this.roundOneReceived) throw new Error('Round one not completed');
+        if (this.roundTwoSent) throw new Error('第二轮数据已发送');
+        if (!this.roundOneSent || !this.roundOneReceived) throw new Error('第一轮尚未完成');
         this.roundTwoSent = true;
 
         const g_xa = (this.g_x1 as ReturnType<ReturnType<typeof EC.keyFromPublic>['getPublic']>).add(this.g_x3 as ReturnType<ReturnType<typeof EC.keyFromPublic>['getPublic']>).add(this.g_x4 as ReturnType<ReturnType<typeof EC.keyFromPublic>['getPublic']>);
@@ -236,8 +236,8 @@ class ECJPAKE {
     }
 
     readRoundTwo(data: Buffer): Buffer {
-        if (this.roundTwoReceived) throw new Error('Round two already received');
-        if (!this.roundOneSent || !this.roundOneReceived) throw new Error('Round one not completed');
+        if (this.roundTwoReceived) throw new Error('第二轮数据已接收');
+        if (!this.roundOneSent || !this.roundOneReceived) throw new Error('第一轮尚未完成');
         this.roundTwoReceived = true;
 
         const offset = this.role === 'client' ? 3 : 0;
@@ -247,7 +247,7 @@ class ECJPAKE {
         const zkp = this.decodeZKP(data.slice(offset + 66, offset + 165));
 
         if (!this.verifyZKP(g_xb, g_s_peer, zkp.v, zkp.r, this.peerRole))
-            throw new Error('ZKP verification failed for round two');
+            throw new Error('第二轮 ZKP 验证失败');
 
         const random = new BN(crypto.randomBytes(16));
         const y = random.mul(EC_N).add(new BN(this.secretBytes));
@@ -269,7 +269,7 @@ export class GatewayClient {
 
     private static parseUrl(url: string): string {
         const match = url.match(/^(https?):\/\/([^/:]+)(?::(\d+))?((?:\/.*)?)/);
-        if (!match) throw new Error('Invalid URL');
+        if (!match) throw new Error('无效的 URL');
         const [, protocol, host, port, path] = match;
         const wsProtocol = protocol === 'https' ? 'wss' : 'ws';
         const wsPort = port || (protocol === 'https' ? '443' : '80');
@@ -309,7 +309,7 @@ export class GatewayClient {
         return new Promise((resolve, reject) => {
             const timer = setTimeout(() => {
                 this.ws!.removeListener('message', onMessage);
-                reject(new Error('timeout'));
+                reject(new Error('操作超时'));
             }, ms);
 
             const onMessage = (data: Buffer) => {
@@ -330,7 +330,7 @@ export class GatewayClient {
 
         let response = await this.recv();
         if (response[0] !== DATA_TYPE.SELECTED_PROTOCOL) {
-            throw new Error('Protocol selection failed');
+            throw new Error('协议选择失败');
         }
 
         const roundOne = jpake.writeRoundOne();
@@ -338,7 +338,7 @@ export class GatewayClient {
 
         response = await this.recv();
         if (response[0] !== DATA_TYPE.ECJPAKE_ROUND_ONE) {
-            throw new Error(`Unexpected response type: ${response[0]}`);
+            throw new Error(`响应类型不符合预期：${response[0]}`);
         }
         jpake.readRoundOne(response.slice(1));
 
@@ -347,7 +347,7 @@ export class GatewayClient {
 
         response = await this.recv();
         if (response[0] !== DATA_TYPE.ECJPAKE_ROUND_TWO) {
-            throw new Error(`Unexpected response type: ${response[0]}`);
+            throw new Error(`响应类型不符合预期：${response[0]}`);
         }
         const serverRoundTwo = response.slice(1);
 
@@ -379,7 +379,7 @@ export class GatewayClient {
         }
 
         if (!this.secureEstablished) {
-            throw new Error('Session key exchange failed');
+            throw new Error('会话密钥交换失败');
         }
 
         this.startReceiveLoop();
@@ -409,18 +409,18 @@ export class GatewayClient {
                     if ('result' in response) {
                         future.resolve(response.result);
                     } else if ('error' in response) {
-                        future.reject(new Error(response.error?.message || 'Unknown error'));
+                        future.reject(new Error(response.error?.message || '未知错误'));
                     }
                 }
             }
         } catch (e) {
-            console.error('[!] Error handling message:', e);
+            console.error('[!] 处理消息时出错：', e);
         }
     }
 
     async callApi<T = unknown>(method: string, params: Record<string, unknown> = {}, timeout: number = 5000): Promise<T> {
         if (!this.secureEstablished) {
-            throw new Error('Secure session not established');
+            throw new Error('尚未建立安全会话');
         }
 
         const requestId = this.sessionIdCounter++;
@@ -448,7 +448,7 @@ export class GatewayClient {
             setTimeout(() => {
                 if (this.pendingRequests.has(requestId)) {
                     this.pendingRequests.delete(requestId);
-                    reject(new Error(`API call timeout: ${method}`));
+                    reject(new Error(`API 调用超时：${method}`));
                 }
             }, timeout);
         });

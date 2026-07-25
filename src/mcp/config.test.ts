@@ -10,4 +10,4 @@ process.env.GATEWAY_URL = 'http://10.0.0.2';
 assert.equal(getConfig().gatewayUrl, 'http://10.0.0.2', '应使用环境变量');
 if (saved === undefined) delete process.env.GATEWAY_URL; else process.env.GATEWAY_URL = saved;
 
-console.log('config gateway url tests passed');
+console.log('网关地址配置测试通过');

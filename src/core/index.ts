@@ -1,9 +1,9 @@
 /**
- * Core - 核心库导出
- * 包含所有可复用逻辑：Gateway 连接管理、原子工具函数、类型定义
+ * 核心模块 - 核心库导出
+ * 包含所有可复用逻辑：网关连接管理、原子工具函数、类型定义
  */
 
-// Gateway
+// 网关
 export { GatewayClient } from './gateway/client';
 export { createGatewayManager } from './gateway/manager';
 export type { GatewayManager } from './gateway/manager';

@@ -1,5 +1,5 @@
 /**
- * MCP Server - 工具注册入口
+ * MCP 服务 - 工具注册入口
  */
 
 export { registerAuthTools } from "./auth.js";

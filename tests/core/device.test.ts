@@ -3,7 +3,7 @@ import test from 'node:test';
 import type { GatewayClient } from '../../src/core/gateway/client';
 import { getDevice } from '../../src/core/tools/device';
 
-test('解析同一 service 的事件参数并为缺失属性提供 fallback', async () => {
+test('解析同一服务的事件参数并为缺失属性提供回退值', async () => {
     const gateway = {
         callApi: async () => ({
             devList: {
@@ -51,7 +51,7 @@ test('解析同一 service 的事件参数并为缺失属性提供 fallback', as
         assert.deepEqual(event?.arguments?.[1], {
             siid: 3,
             piid: 99,
-            desc: 'Property 99',
+        desc: '属性 99',
             dtype: 'unknown',
             access: [],
         });

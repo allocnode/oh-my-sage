@@ -101,7 +101,7 @@ const PRESET_MODELS = {
 
 ---
 
-## System Prompt
+## 系统提示词
 
 ```
 你是"智者"（oh-my-sage），一个米家智能家居 AI 助手。
@@ -161,7 +161,7 @@ Agent: [思考中...]
 
 ## Graph CRUD 操作
 
-### Create - 创建规则
+### 创建规则
 
 ```typescript
 await gateway.callApi('setGraph', {
@@ -176,20 +176,20 @@ await gateway.callApi('setGraph', {
 });
 ```
 
-### Read - 查询规则
+### 查询规则
 
 ```typescript
 const graphs = await gateway.callApi('getGraphList');
 const graph = await gateway.callApi('getGraph', { id: 'graph_xxx' });
 ```
 
-### Update - 更新规则
+### 更新规则
 
 ```typescript
 await gateway.callApi('setGraph', { id: 'graph_xxx', nodes: [...], cfg: {...} });
 ```
 
-### Delete - 删除规则
+### 删除规则
 
 ```typescript
 await gateway.callApi('deleteGraph', { id: 'graph_xxx' });
@@ -201,7 +201,7 @@ await gateway.callApi('deleteGraph', { id: 'graph_xxx' });
 
 | 方面 | 旧方案 (v1) | 新方案 (v2) |
 |------|-------------|-------------|
-| 流程控制 | switch-case 硬编码 | Agent Loop + 工具驱动 |
+| 流程控制 | switch-case 硬编码 | Agent 循环 + 工具驱动 |
 | 能力实现 | 独立的处理函数 | 统一的工具接口 |
 | 意图识别 | 每次都做 | 需要时才做 |
 | 思考过程 | 黑盒 | 输出可见 |

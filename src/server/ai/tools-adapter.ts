@@ -1,6 +1,6 @@
 /**
- * Web Agent - 工具适配器
- * 将 Core 工具函数适配为 Vercel AI SDK 格式
+ * Web 智能体 - 工具适配器
+ * 将核心工具函数适配为 Vercel AI SDK 格式
  */
 
 import {z} from 'zod';
@@ -261,7 +261,7 @@ export function createCoreTools(gateway: GatewayClient) {
                     const available = catalog.map(s => s.name).join(', ');
                     return {
                         success: false,
-                        error: `Skill "${name}" 不存在。可用的 skills: ${available}`,
+                        error: `技能“${name}”不存在。可用技能：${available}`,
                     };
                 }
 

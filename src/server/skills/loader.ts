@@ -1,11 +1,11 @@
 /**
- * Skills Loader
+ * Skill 加载器
  * 动态加载 .agents/skills/ 目录下的 SKILL.md 文件
  *
- * 支持渐进式披露（Progressive Disclosure）：
- * - 第一层（Catalog）：name + description（~50-100 tokens per skill）
- * - 第二层（Instructions）：完整 SKILL.md body（<5000 tokens）
- * - 第三层（Resources）：references/, scripts/, assets/ 中的文件
+ * 支持渐进式披露：
+ * - 第一层（目录）：name + description（每个 skill 约 50-100 个 token）
+ * - 第二层（说明）：完整 SKILL.md 正文（少于 5000 个 token）
+ * - 第三层（资源）：references/、scripts/、assets/ 中的文件
  */
 
 import fs from 'fs';
@@ -13,7 +13,7 @@ import path from 'path';
 
 /**
  * Skill 元数据（渐进式披露第一层）
- * 只包含 name 和 description，用于 catalog 展示
+ * 只包含 name 和 description，用于目录展示
  */
 export interface SkillMeta {
     name: string;
@@ -116,7 +116,7 @@ function listResources(baseDir: string): string[] {
 }
 
 /**
- * 扫描目录下的所有 skills
+ * 扫描目录下的所有 skill
  */
 function scanSkillsDirectory(baseDir: string): Skill[] {
     const skills: Skill[] = [];
@@ -147,12 +147,12 @@ function scanSkillsDirectory(baseDir: string): Skill[] {
 }
 
 /**
- * 加载所有 skills
+ * 加载所有 skill
  */
 export function loadSkills(): Skill[] {
     const skillsMap = new Map<string, Skill>();
 
-    // 1. 项目级 skills
+    // 1. 项目级 skill
     const projectSkillsDir = path.join(process.cwd(), '.agents', 'skills');
     const projectSkills = scanSkillsDirectory(projectSkillsDir);
     for (const skill of projectSkills) {
@@ -160,7 +160,7 @@ export function loadSkills(): Skill[] {
         console.log(`[Skill] 已加载（项目级）: ${skill.name}`);
     }
 
-    // 2. 用户级 skills
+    // 2. 用户级 skill
     const homeDir = process.env.HOME || process.env.USERPROFILE;
     if (homeDir) {
         const userSkillsDir = path.join(homeDir, '.agents', 'skills');
@@ -176,7 +176,7 @@ export function loadSkills(): Skill[] {
     }
 
     const skills = Array.from(skillsMap.values());
-    console.log(`[Skill] 共加载 ${skills.length} 个 skills`);
+    console.log(`[技能] 共加载 ${skills.length} 个技能`);
     return skills;
 }
 
@@ -184,7 +184,7 @@ export function loadSkills(): Skill[] {
 let cachedSkills: Skill[] | null = null;
 
 /**
- * 获取 skills（带缓存）
+ * 获取 skill（带缓存）
  */
 export function getSkills(): Skill[] {
     if (cachedSkills === null) {
@@ -212,7 +212,7 @@ export function getSkillByName(name: string): Skill | null {
 }
 
 /**
- * 格式化 skill catalog 为系统提示（渐进式披露第一层）
+ * 将 skill 目录格式化为系统提示（渐进式披露第一层）
  * 只包含 name 和 description
  */
 export function formatSkillCatalogForPrompt(): string {
@@ -223,7 +223,7 @@ export function formatSkillCatalogForPrompt(): string {
     }
 
     let prompt = '\n\n## 可用的 Skills\n\n';
-    prompt += '以下 skills 提供了特定任务的专业指导。\n';
+    prompt += '以下技能提供了特定任务的专业指导。\n';
     prompt += '当任务匹配某个 skill 的描述时，使用 activate_skill 工具加载其完整内容。\n\n';
 
     for (const skill of catalog) {
@@ -235,7 +235,7 @@ export function formatSkillCatalogForPrompt(): string {
 
 /**
  * 格式化 skill 完整内容（渐进式披露第二层）
- * 包含 SKILL.md body 和可用资源列表
+ * 包含 SKILL.md 正文和可用资源列表
  */
 export function formatSkillContent(skill: Skill): string {
     let content = `# Skill: ${skill.name}\n\n`;
@@ -259,7 +259,7 @@ export function formatSkillContent(skill: Skill): string {
 export function readSkillFile(skillName: string, filePath: string): string | null {
     const skill = getSkillByName(skillName);
     if (!skill) {
-        console.error(`[Skill] Skill 不存在: ${skillName}`);
+        console.error(`[技能] 技能不存在：${skillName}`);
         return null;
     }
 

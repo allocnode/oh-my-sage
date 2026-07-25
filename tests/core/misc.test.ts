@@ -41,10 +41,10 @@ test('允许已验证的 API 列表读取接口', async () => {
 
 test('网关异常转为失败响应', async () => {
     const gateway = gatewayWith(() => {
-        throw new Error('boom');
+        throw new Error('模拟异常');
     });
     const result = await callGatewayApi(gateway, 'getGraphList');
 
     assert.equal(result.success, false);
-    if (!result.success) assert.match(result.error, /boom/);
+    if (!result.success) assert.match(result.error, /模拟异常/);
 });

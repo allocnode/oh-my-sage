@@ -1,5 +1,5 @@
 /**
- * Session 存储实现
+ * 会话存储实现
  * 使用 JSONL 格式保存对话历史
  */
 
@@ -7,7 +7,7 @@ import fs from 'fs';
 import path from 'path';
 
 /**
- * Session 元数据
+ * 会话元数据
  */
 export interface SessionMeta {
     id: string;
@@ -20,7 +20,7 @@ export interface SessionMeta {
 }
 
 /**
- * Session 消息
+ * 会话消息
  */
 export interface SessionMessage {
     seq: number;
@@ -43,14 +43,14 @@ export interface ToolCall {
 }
 
 /**
- * Session 索引
+ * 会话索引
  */
 interface SessionIndex {
     sessions: SessionMeta[];
 }
 
 /**
- * Session Store 类
+ * 会话存储类
  */
 export class SessionStore {
     private baseDir: string;
@@ -77,7 +77,7 @@ export class SessionStore {
     }
 
     /**
-     * 获取 session 文件路径
+     * 获取会话文件路径
      */
     private getSessionPath(sessionId: string): string {
         return path.join(this.baseDir, `${sessionId}.jsonl`);
@@ -113,7 +113,7 @@ export class SessionStore {
     }
 
     /**
-     * 创建新 session
+     * 创建新会话
      */
     async createSession(title?: string): Promise<SessionMeta> {
         const id = this.generateId();
@@ -129,7 +129,7 @@ export class SessionStore {
             isActive: true,
         };
 
-        // 创建空的 session 文件
+        // 创建空的会话文件
         fs.writeFileSync(this.getSessionPath(id), '');
 
         // 更新索引
@@ -141,7 +141,7 @@ export class SessionStore {
     }
 
     /**
-     * 获取 session 列表
+     * 获取会话列表
      */
     async listSessions(): Promise<SessionMeta[]> {
         const index = this.readIndex();
@@ -151,7 +151,7 @@ export class SessionStore {
     }
 
     /**
-     * 获取 session 元数据
+     * 获取会话元数据
      */
     async getSessionMeta(sessionId: string): Promise<SessionMeta | null> {
         const index = this.readIndex();
@@ -159,7 +159,7 @@ export class SessionStore {
     }
 
     /**
-     * 获取 session 消息历史
+     * 获取会话消息历史
      */
     async getMessages(sessionId: string): Promise<SessionMessage[]> {
         const sessionPath = this.getSessionPath(sessionId);
@@ -245,7 +245,7 @@ export class SessionStore {
 
     /**
      * 插入压缩摘要消息
-     * 将当前 session 从最后一条 compressed 消息之后的内容压缩为一条 compressed 消息
+     * 将当前会话从最后一条 compressed 消息之后的内容压缩为一条 compressed 消息
      * 原始消息保留在文件中，compressed 消息追加在末尾
      * reloadMessages 读取时会找到最后一条 compressed 并截断其前面的历史
      */
@@ -258,7 +258,7 @@ export class SessionStore {
     }
 
     /**
-     * 截断 session 消息
+     * 截断会话消息
      * 保留 seq <= keepSeq 的消息，删除之后的所有消息
      * 用于"重做"功能：回到指定用户消息位置
      */
@@ -287,7 +287,7 @@ export class SessionStore {
     }
 
     /**
-     * 更新 session 元数据
+     * 更新会话元数据
      */
     async updateSessionMeta(sessionId: string, updates: Partial<SessionMeta>): Promise<void> {
         const index = this.readIndex();
@@ -304,10 +304,10 @@ export class SessionStore {
     }
 
     /**
-     * 删除 session
+     * 删除会话
      */
     async deleteSession(sessionId: string): Promise<void> {
-        // 删除 session 文件
+        // 删除会话文件
         const sessionPath = this.getSessionPath(sessionId);
         if (fs.existsSync(sessionPath)) {
             fs.unlinkSync(sessionPath);
@@ -320,12 +320,12 @@ export class SessionStore {
     }
 
     /**
-     * 清空所有 session
+     * 清空所有会话
      */
     async clearAll(): Promise<void> {
         const index = this.readIndex();
 
-        // 删除所有 session 文件
+        // 删除所有会话文件
         for (const session of index.sessions) {
             const sessionPath = this.getSessionPath(session.id);
             if (fs.existsSync(sessionPath)) {
@@ -342,7 +342,7 @@ export class SessionStore {
 let storeInstance: SessionStore | null = null;
 
 /**
- * 获取 Session Store 实例
+ * 获取会话存储实例
  */
 export function getSessionStore(): SessionStore {
     if (!storeInstance) {

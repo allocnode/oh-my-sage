@@ -1,6 +1,6 @@
 /**
- * oh-my-sage - Agent 核心
- * 实现工具驱动的 Agent 循环
+ * oh-my-sage - 智能体核心
+ * 实现工具驱动的智能体循环
  */
 
 import {streamText, generateText, CoreMessage} from 'ai';
@@ -13,7 +13,7 @@ import {formatSkillCatalogForPrompt} from '../skills/loader';
 
 
 /**
- * Agent 输出类型
+ * 智能体输出类型
  */
 export type AgentOutput =
     | { type: 'text'; content: string }
@@ -25,11 +25,11 @@ export type AgentOutput =
     | { type: 'error'; error: string };
 
 /**
- * Agent 类
+ * 智能体类
  * 实现持续运行的思考-行动循环
  */
 export class Agent {
-    /** 上下文压缩阈值（token 估算值），超过此值触发压缩 */
+    /** 上下文压缩阈值（词元估算值），超过此值触发压缩 */
     private static readonly MAX_CONTEXT_TOKENS = 200000;
     /** 压缩时保留的最近消息轮数（这些消息不参与压缩，直接保留） */
     private static readonly KEEP_RECENT_TURNS = 3;
@@ -47,7 +47,7 @@ export class Agent {
         this.modelConfig = modelConfig || getModelConfigFromEnv();
         this.tools = createCoreTools(gateway);
 
-        // 渐进式披露第一层：只添加 skill catalog（name + description）
+        // 渐进式披露第一层：只添加 skill 目录（name + description）
         const skillsCatalog = formatSkillCatalogForPrompt();
         this.systemPrompt = SYSTEM_PROMPT + skillsCatalog;
     }
@@ -157,12 +157,12 @@ export class Agent {
     }
 
     /**
-     * 估算当前 messages 的 token 数
-     * 粗略按 1 token ≈ 3.5 字符（中文场景偏保守）
+     * 估算当前 messages 的词元数
+     * 粗略按 1 个词元 ≈ 3.5 字符（中文场景偏保守）
      */
     private estimateTokens(): number {
         let totalChars = 0;
-        // system prompt
+        // system 提示词
         totalChars += (this.systemPrompt || '').length;
 
         for (const msg of this.messages) {
@@ -313,7 +313,7 @@ export class Agent {
     }
 
     /**
-     * Agent 主循环
+     * 智能体主循环
      * 返回一个异步生成器，用于流式输出
      */
     async* run(userInput?: string): AsyncGenerator<AgentOutput> {
@@ -453,7 +453,7 @@ export class Agent {
 
         } catch (error) {
             yield {type: 'error', error: String(error)};
-            console.log("Agent run got error", error);
+            console.log("Agent 运行出错", error);
         }
     }
 
