@@ -262,6 +262,9 @@ export class GatewayClient {
     private ws: WebSocket | null = null;
     private sessionIdCounter = 0;
     private pendingRequests = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
+    private handshakeFrames: Buffer[] = [];
+    private handshakeError: Error | null = null;
+    private handshakeWaiters: Array<{ resolve: (data: Buffer) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }> = [];
     private cipherOut: AESGCMCipher | null = null;
     private cipherIn: AESGCMCipher | null = null;
     private secureEstablished = false;
@@ -279,49 +282,67 @@ export class GatewayClient {
 
     async connect(gatewayUrl: string): Promise<void> {
         const url = GatewayClient.parseUrl(gatewayUrl);
+        await this.close();
+        this.handshakeFrames = [];
+        this.handshakeError = null;
 
         return new Promise((resolve, reject) => {
-            this.ws = new WebSocket(url);
+            const ws = new WebSocket(url);
+            this.ws = ws;
+            const fail = (error: Error) => {
+                if (this.ws !== ws) return;
+                this.connected = false;
+                this.secureEstablished = false;
+                this.handshakeError = error;
+                this.handshakeFrames = [];
+                for (const waiter of this.handshakeWaiters.splice(0)) {
+                    clearTimeout(waiter.timer);
+                    waiter.reject(error);
+                }
+                reject(error);
+            };
+            // Listen before sending anything: authentication frames may arrive back-to-back.
+            ws.on('message', (data: Buffer) => {
+                if (this.ws !== ws || this.secureEstablished || this.handshakeError) return;
+                const waiter = this.handshakeWaiters.shift();
+                if (waiter) {
+                    clearTimeout(waiter.timer);
+                    waiter.resolve(data);
+                } else {
+                    this.handshakeFrames.push(data);
+                }
+            });
+            ws.on('close', (code) => fail(new Error(`Gateway connection closed (${code})`)));
+            ws.on('error', fail);
 
-            this.ws.on('open', () => {
+            ws.on('open', () => {
+                if (this.ws !== ws || this.handshakeError) return;
                 const protocols = ['passcode'];
                 const data = Buffer.from(JSON.stringify(protocols), 'utf8');
                 const message = Buffer.alloc(1 + data.length);
                 message[0] = DATA_TYPE.PROTOCOL_LIST;
                 data.copy(message, 1);
-                this.ws!.send(message);
+                ws.send(message);
                 this.connected = true;
                 resolve();
             });
-
-            this.ws.on('error', reject);
         });
     }
 
-    private recv(): Promise<Buffer> {
+    private recv(timeout = 10000): Promise<Buffer> {
+        if (this.handshakeError) return Promise.reject(this.handshakeError);
+        const queued = this.handshakeFrames.shift();
+        if (queued) return Promise.resolve(queued);
         return new Promise((resolve, reject) => {
-            this.ws!.once('message', resolve);
-            this.ws!.once('error', reject);
-        });
-    }
-
-    private recvTimeout(ms: number): Promise<Buffer> {
-        return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => {
-                this.ws!.removeListener('message', onMessage);
-                reject(new Error('timeout'));
-            }, ms);
-
-            const onMessage = (data: Buffer) => {
-                clearTimeout(timer);
-                resolve(data);
+            const waiter = {
+                resolve,
+                reject,
+                timer: setTimeout(() => {
+                    this.handshakeWaiters = this.handshakeWaiters.filter((item) => item !== waiter);
+                    reject(new Error('Gateway authentication timed out'));
+                }, timeout),
             };
-
-            this.ws!.once('message', onMessage);
-            this.ws!.once('error', (err) => {
-                clearTimeout(timer);
-                reject(err);
-            });
+            this.handshakeWaiters.push(waiter);
         });
     }
 
@@ -357,7 +378,7 @@ export class GatewayClient {
         const myKeyNonce = crypto.randomBytes(24);
 
         try {
-            response = await this.recvTimeout(3000);
+            response = await this.recv(3000);
             if (response[0] === DATA_TYPE.SESSION_KEY_EXCHANGE) {
                 const serverKeyNonce = sharedCipher.decrypt(response.slice(1));
                 const encrypted = sharedCipher.encrypt(myKeyNonce);
@@ -366,7 +387,8 @@ export class GatewayClient {
                 this.cipherIn = new AESGCMCipher(serverKeyNonce.slice(0, 16), serverKeyNonce.slice(16, 24));
                 this.secureEstablished = true;
             }
-        } catch {
+        } catch (error) {
+            if (this.handshakeError) throw error;
             const encrypted = sharedCipher.encrypt(myKeyNonce);
             await this.ws!.send(Buffer.concat([Buffer.from([DATA_TYPE.SESSION_KEY_EXCHANGE]), encrypted]));
             response = await this.recv();
@@ -387,9 +409,9 @@ export class GatewayClient {
 
     private startReceiveLoop(): void {
         if (!this.ws) return;
-
-        this.ws.on('message', (data: Buffer) => {
-            this.handleMessage(data);
+        const ws = this.ws;
+        ws.on('message', (data: Buffer) => {
+            if (this.ws === ws) this.handleMessage(data);
         });
     }
 
@@ -459,6 +481,16 @@ export class GatewayClient {
     }
 
     async close(): Promise<void> {
+        this.connected = false;
+        this.secureEstablished = false;
+        this.cipherIn = null;
+        this.cipherOut = null;
+        this.handshakeFrames = [];
+        this.handshakeError = new Error('Gateway connection closed');
+        for (const waiter of this.handshakeWaiters.splice(0)) {
+            clearTimeout(waiter.timer);
+            waiter.reject(this.handshakeError);
+        }
         if (this.ws) {
             this.ws.close();
             this.ws = null;
