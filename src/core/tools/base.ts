@@ -13,6 +13,22 @@ const DUAL_OUTPUT_TYPES = new Set(['deviceGet', 'varGet']);
 
 const STATE_CONDITION_INPUT_TYPES = new Set(['condition', 'logicOr', 'logicAnd', 'logicNot']);
 
+/** Canvas annotations do not participate in execution. */
+const ANNOTATION_NODE_TYPES = new Set(['nop']);
+
+/** Accept both legacy plain text and rich-text inserts. */
+function annotationText(node: GraphNode): string {
+    const contents = (node.cfg as Record<string, unknown> | undefined)?.contents;
+    if (typeof contents === 'string') return contents;
+    if (!Array.isArray(contents)) return '';
+    return contents
+        .map((seg) => {
+            const insert = (seg as Record<string, unknown> | null)?.insert;
+            return typeof insert === 'string' ? insert : '';
+        })
+        .join('');
+}
+
 function targetInfo(target: string): { id: string; port: string } | null {
     const dotIdx = target.lastIndexOf('.');
     if (dotIdx === -1) return null;
@@ -122,6 +138,19 @@ export function validateGraph(graph: Graph): ValidationError[] {
             errors.push({ nodeId: node.id, type: 'state_has_inputs', level: 'error', message: `${node.type} 是 state 节点，inputs 必须为 {}` });
         }
 
+        if (ANNOTATION_NODE_TYPES.has(node.type)) {
+            if (Object.keys(node.inputs || {}).length > 0) {
+                errors.push({ nodeId: node.id, type: 'nop_has_inputs', level: 'error', message: `${node.type} 是备注节点，inputs 必须为 {}` });
+            }
+            const hasTargets = Object.values(node.outputs || {}).some((v) => Array.isArray(v) && v.length > 0);
+            if (hasTargets) {
+                errors.push({ nodeId: node.id, type: 'nop_has_outputs', level: 'error', message: `${node.type} 是备注节点，outputs 不能连接任何下游节点` });
+            }
+            if (!annotationText(node).trim()) {
+                errors.push({ nodeId: node.id, type: 'nop_empty', level: 'warn', message: `${node.type} 备注内容为空，正文应写入 cfg.contents[].insert` });
+            }
+        }
+
         if (node.type === 'loop') {
             const ik = Object.keys(node.inputs || {});
             if (!ik.includes('start') || !ik.includes('stop')) {
@@ -181,6 +210,7 @@ export function validateGraph(graph: Graph): ValidationError[] {
         if ((node.type === 'deviceInputSetVar' || node.type === 'deviceGetSetVar') && ((node.props as Record<string, unknown>)?.dtype === 'int' || (node.props as Record<string, unknown>)?.dtype === 'float')) {
             errors.push({ nodeId: node.id, type: 'var_dtype', level: 'warn', message: `${node.type} dtype 应为 "number"，当前 "${(node.props as Record<string, unknown>).dtype}"` });
         }
+
     }
 
     incoming.forEach((sources, key) => {
@@ -189,6 +219,11 @@ export function validateGraph(graph: Graph): ValidationError[] {
         if (n && STATE_NODE_TYPES.has(n.type)) {
             sources.forEach((s) => {
                 errors.push({ nodeId: nid, type: 'state_has_incoming', level: 'error', message: `state 节点 "${nid}" (${n.type}) 不应被触发，收到连接: ${s}` });
+            });
+        }
+        if (n && ANNOTATION_NODE_TYPES.has(n.type)) {
+            sources.forEach((s) => {
+                errors.push({ nodeId: nid, type: 'nop_has_incoming', level: 'error', message: `备注节点 "${nid}" (${n.type}) 不应被连接，收到连接: ${s}` });
             });
         }
     });
@@ -204,9 +239,14 @@ export function layoutNodes(nodes: GraphNode[]): void {
     const V_SPACING = 80;
     const START_X = 100;
     const START_Y = 100;
+    const NOTE_DEFAULT_HEIGHT = 400;
+
+    // Keep annotations out of flow levels and place new notes above the flow.
+    const noteNodes = nodes.filter((node) => ANNOTATION_NODE_TYPES.has(node.type));
+    const flowNodes = nodes.filter((node) => !ANNOTATION_NODE_TYPES.has(node.type));
 
     const nodeMap = new Map<string, GraphNode>();
-    for (const node of nodes) {
+    for (const node of flowNodes) {
         nodeMap.set(node.id, node);
     }
 
@@ -214,12 +254,12 @@ export function layoutNodes(nodes: GraphNode[]): void {
     const inDegree = new Map<string, number>();
     const parentOf = new Map<string, string>();
 
-    for (const node of nodes) {
+    for (const node of flowNodes) {
         children.set(node.id, []);
         inDegree.set(node.id, 0);
     }
 
-    for (const node of nodes) {
+    for (const node of flowNodes) {
         const outputs = node.outputs || {};
         for (const [, targets] of Object.entries(outputs)) {
             if (!Array.isArray(targets)) continue;
@@ -238,7 +278,7 @@ export function layoutNodes(nodes: GraphNode[]): void {
     const levels = new Map<string, number>();
     const queue: string[] = [];
 
-    for (const node of nodes) {
+    for (const node of flowNodes) {
         if (inDegree.get(node.id) === 0) {
             queue.push(node.id);
             levels.set(node.id, 0);
@@ -260,7 +300,7 @@ export function layoutNodes(nodes: GraphNode[]): void {
         }
     }
 
-    for (const node of nodes) {
+    for (const node of flowNodes) {
         if (!levels.has(node.id)) {
             levels.set(node.id, 0);
         }
@@ -296,7 +336,15 @@ export function layoutNodes(nodes: GraphNode[]): void {
         }
     }
 
+    // updateGraph restores existing flow positions after this call.
+    let noteBottom = START_Y;
     for (const node of nodes) {
+        const existingY = (node.cfg?.pos as { y?: unknown } | undefined)?.y;
+        if (typeof existingY === 'number' && Number.isFinite(existingY)) noteBottom = Math.min(noteBottom, existingY);
+    }
+    for (const pos of positions.values()) noteBottom = Math.min(noteBottom, pos.y);
+
+    for (const node of flowNodes) {
         const pos = positions.get(node.id);
         if (pos) {
             node.cfg = node.cfg || {};
@@ -307,5 +355,17 @@ export function layoutNodes(nodes: GraphNode[]): void {
                 height: NODE_HEIGHT,
             };
         }
+    }
+
+    for (const node of noteNodes) {
+        node.cfg = node.cfg || {};
+        if (node.cfg.pos) continue;
+        noteBottom -= V_SPACING + NOTE_DEFAULT_HEIGHT;
+        node.cfg.pos = {
+            x: START_X,
+            y: noteBottom,
+            width: NODE_WIDTH,
+            height: NOTE_DEFAULT_HEIGHT,
+        };
     }
 }

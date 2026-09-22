@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Graph, GraphNode } from '../../src/core/types/graph';
-import { validateGraph } from '../../src/core/tools/base';
+import { layoutNodes, validateGraph } from '../../src/core/tools/base';
 
 function node(
     id: string,
@@ -110,4 +110,113 @@ test('deviceGetSetVar 接受极客版 UI 生成的单 output 结构', () => {
     ]);
 
     assert.deepEqual(validateGraph(value), []);
+});
+
+function noteNode(
+    id: string,
+    text: string,
+    inputs: Record<string, unknown> = {},
+    outputs: Record<string, string[]> = { output: [] }
+): GraphNode {
+    return {
+        id,
+        type: 'nop',
+        cfg: { name: 'nop', version: 1, background: '#80CAFF', contents: [{ insert: text }] },
+        props: {},
+        inputs,
+        outputs,
+    };
+}
+
+test('合法的 nop 备注节点不产生任何错误', () => {
+    const value = graph([
+        noteNode('note1', '用途   有人进入时自动开灯\n'),
+        node('load', 'onLoad', {}, { output: ['set.input'] }),
+        node('set', 'varSetNumber', { input: null }, { output: [] }),
+    ]);
+
+    assert.deepEqual(validateGraph(value), []);
+});
+
+test('nop 节点声明 inputs 报错', () => {
+    const value = graph([noteNode('note1', '备注', { trigger: null })]);
+
+    assert.equal(validateGraph(value).some((error) => error.type === 'nop_has_inputs' && error.level === 'error'), true);
+});
+
+test('nop 节点连接下游节点报错', () => {
+    const value = graph([
+        noteNode('note1', '备注', {}, { output: ['set.input'] }),
+        node('set', 'varSetNumber', { input: null }, { output: [] }),
+    ]);
+
+    assert.equal(validateGraph(value).some((error) => error.type === 'nop_has_outputs' && error.level === 'error'), true);
+});
+
+test('其他节点连接到 nop 报错', () => {
+    const value = graph([
+        node('load', 'onLoad', {}, { output: ['note1.input'] }),
+        noteNode('note1', '备注', { input: null }),
+    ]);
+
+    assert.equal(validateGraph(value).some((error) => error.type === 'nop_has_incoming' && error.level === 'error'), true);
+});
+
+test('nop 备注正文为空只给出 warn，不阻止写入', () => {
+    const errors = validateGraph(graph([noteNode('note1', '   \n')]));
+
+    assert.equal(errors.some((error) => error.type === 'nop_empty' && error.level === 'warn'), true);
+    assert.equal(errors.some((error) => error.level === 'error'), false);
+});
+
+function scopedGraph(graphId: string, scope: string): Graph {
+    const value = graph([
+        node('load', 'onLoad', {}, { output: ['set.input'] }),
+        node('set', 'varSetNumber', { input: null }, { output: [] }, {
+            elements: [{ type: 'const', value: '0' }], id: 'inRoom', scope,
+        }),
+    ]);
+    value.id = graphId;
+    value.cfg.id = graphId;
+    return value;
+}
+
+test('structural validation permits global, local and cross-rule variable scopes', () => {
+    for (const scope of ['global', 'R123', 'Rgraph_123', 'R456', 'rule']) {
+        assert.deepEqual(validateGraph(scopedGraph('graph_123', scope)), []);
+    }
+});
+
+test('annotation text supports legacy strings and ignores non-text inserts', () => {
+    const note = noteNode('note', '');
+    note.cfg.contents = 'Legacy note';
+    assert.deepEqual(validateGraph(graph([note])), []);
+    note.cfg.contents = [null, { insert: { image: 'example' } }, { insert: 'Rich text' }];
+    assert.deepEqual(validateGraph(graph([note])), []);
+});
+
+test('annotations do not move flow nodes and receive separate positions', () => {
+    const flow = [node('load', 'onLoad', {}, { output: ['set.input'] }), node('set', 'varSetNumber', { input: null }, { output: [] })];
+    const annotated = structuredClone(flow);
+    const first = noteNode('first', 'First');
+    const second = noteNode('second', 'Second');
+    layoutNodes(flow);
+    layoutNodes([first, ...annotated, second]);
+    assert.deepEqual(annotated, flow);
+    const firstPos = first.cfg.pos as { y: number; height: number };
+    const secondPos = second.cfg.pos as { y: number; height: number };
+    const flowPos = flow[0].cfg.pos as { y: number };
+    assert.ok(firstPos.y + firstPos.height < flowPos.y);
+    assert.ok(secondPos.y + secondPos.height < firstPos.y);
+});
+
+test('annotation-only layout preserves existing size and rich-text content', () => {
+    const existing = noteNode('existing', 'Keep this');
+    existing.cfg.pos = { x: -100, y: -900, width: 700, height: 600 };
+    const original = structuredClone(existing);
+    const added = noteNode('added', 'New');
+    layoutNodes([existing, added]);
+    assert.deepEqual(existing, original);
+    const addedPos = added.cfg.pos as { y: number; height: number };
+    assert.ok(addedPos.y + addedPos.height < -900);
 });
