@@ -123,7 +123,9 @@ export class Agent {
                             type: 'tool-call' as const,
                             toolCallId: tc.toolCallId || `${baseId}_${i}`,
                             toolName: tc.tool,
-                            args: tc.args,
+                            // args 缺失时兜底为空对象：部分服务端（如 DeepSeek）会严格校验
+                            // tool_calls[].function.arguments 字段必须存在，否则直接 400/422
+                            args: tc.args ?? {},
                         })),
                     });
 
@@ -358,7 +360,10 @@ export class Agent {
             let needsUserInput = false;
             let waitingQuestion: string | undefined;
             let waitingOptions: string[] | undefined;
-            let currentToolCall: { toolCallId: string; tool: string; args: any } | null = null;
+            // 按 toolCallId 记录待返回的工具调用。
+            // 不能用单个变量：模型并行发起多个工具调用时，后一个会覆盖前一个，
+            // 导致 args 丢失或错配（落库后重放会触发服务端 missing field 'arguments'）。
+            const pendingToolCalls = new Map<string, { tool: string; args: any }>();
 
             for await (const chunk of result.fullStream) {
                 switch (chunk.type) {
@@ -370,12 +375,11 @@ export class Agent {
                         break;
 
                     case 'tool-call':
-                        // 工具调用开始
-                        currentToolCall = {
-                            toolCallId: chunk.toolCallId,
+                        // 工具调用开始：按 toolCallId 记录，支持并行调用
+                        pendingToolCalls.set(chunk.toolCallId, {
                             tool: chunk.toolName,
-                            args: chunk.args
-                        };
+                            args: chunk.args,
+                        });
                         yield {
                             type: 'tool_start',
                             tool: chunk.toolName,
@@ -384,16 +388,18 @@ export class Agent {
                         break;
 
                     case 'tool-result':
-                        // 工具执行结果
+                        // 工具执行结果：按 toolCallId 取回对应的调用信息
+                        const started = pendingToolCalls.get(chunk.toolCallId);
+                        pendingToolCalls.delete(chunk.toolCallId);
                         const toolCall: ToolCall = {
-                            toolCallId: currentToolCall?.toolCallId || chunk.toolCallId,
-                            tool: currentToolCall?.tool || chunk.toolName,
-                            args: currentToolCall?.args,
+                            toolCallId: chunk.toolCallId,
+                            tool: started?.tool || chunk.toolName,
+                            // args 缺失时兜底为空对象，避免落库后重放出缺字段的请求
+                            args: started?.args ?? {},
                             result: chunk.result,
                             success: chunk.result?.success !== false,
                         };
                         toolCalls.push(toolCall);
-                        currentToolCall = null;
 
                         yield {
                             type: 'tool_result',
