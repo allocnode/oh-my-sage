@@ -346,6 +346,22 @@ export class GatewayClient {
         });
     }
 
+    /**
+     * 认证被网关以非预期帧拒绝时，包装成带操作提示的错误。
+     *
+     * 实测与官方前端（ref/ai-config-v5）文案：「无论输入的登录码是否正确，
+     * 再次输入都需要重新获取登录码」。即登录码是一次性的，复用旧码会在此处
+     * 收到 ERROR(type 4)。这里统一提醒，避免用户/LLM 反复用旧码重试。
+     */
+    private authRejectedError(responseType: number): Error {
+        if (responseType === DATA_TYPE.ERROR) {
+            return new Error(
+                '登录码已被使用或无效，请重新获取一个新的登录码后再试（登录码是一次性的，每次连接都需要新的登录码）。'
+            );
+        }
+        return new Error(`Unexpected response type: ${responseType}`);
+    }
+
     async authenticate(passcode: string): Promise<void> {
         const jpake = new ECJPAKE(passcode, 'client');
 
@@ -359,7 +375,7 @@ export class GatewayClient {
 
         response = await this.recv();
         if (response[0] !== DATA_TYPE.ECJPAKE_ROUND_ONE) {
-            throw new Error(`Unexpected response type: ${response[0]}`);
+            throw this.authRejectedError(response[0]);
         }
         jpake.readRoundOne(response.slice(1));
 
@@ -368,7 +384,7 @@ export class GatewayClient {
 
         response = await this.recv();
         if (response[0] !== DATA_TYPE.ECJPAKE_ROUND_TWO) {
-            throw new Error(`Unexpected response type: ${response[0]}`);
+            throw this.authRejectedError(response[0]);
         }
         const serverRoundTwo = response.slice(1);
 

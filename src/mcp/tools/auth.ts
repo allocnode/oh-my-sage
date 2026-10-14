@@ -23,6 +23,9 @@ export function registerAuthTools(
 
 此工具必须在调用其他任何工具之前调用，用于建立与米家网关的安全连接。
 
+⚠️ 登录码是一次性的：一个登录码只能用于一次认证尝试（成功或失败后即作废）。
+每次连接（含断开后重连）都必须向用户索取一个【新的】登录码，不可复用旧码。
+
 Args:
   - passcode (string): 6位数字登录码，从网关设备上获取
   - gateway_url (string, optional): 网关地址。未提供时使用 MCP 配置的 GATEWAY_URL 环境变量；两者都没有时会返回错误，请提供地址
@@ -35,9 +38,9 @@ Error Handling:
   - "登录码格式错误" - passcode 不是6位数字
   - "未配置网关地址" - 未提供 gateway_url 且未设置 GATEWAY_URL，请提供网关地址
   - "网关连接失败" - 无法连接到网关地址
-  - "认证失败" - 登录码不正确`,
+  - "登录码已被使用或无效" - 登录码一次性，需重新获取新登录码`,
       inputSchema: z.object({
-        passcode: z.string().regex(/^\d{6}$/, "必须是6位数字").describe("6位数字登录码"),
+        passcode: z.string().regex(/^\d{6}$/, "必须是6位数字").describe("6位数字登录码（一次性，每次连接都需新的）"),
         gateway_url: z.string().url().optional().describe("网关地址，可选；缺省时使用 GATEWAY_URL 环境变量，两者都无则报错"),
       }),
       annotations: {
