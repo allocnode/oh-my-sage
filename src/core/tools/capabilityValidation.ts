@@ -44,6 +44,13 @@ function validScalar(value: unknown, dtype: string): boolean {
     return !/^u?int\d*$/.test(dtype) || Number.isInteger(value);
 }
 
+// 浮点步进取模带容差判断：JS 浮点精度下 (85 - 0) % 0.1 === 0.0999...，严格取模会把合法值误判为越界
+function inRange(value: number, range: { min: number; max: number; step: number }): boolean {
+    if (value < range.min || value > range.max) return false;
+    const mod = (value - range.min) % range.step;
+    return mod < 1e-6 || range.step - mod < 1e-6;
+}
+
 function validateValue(node: GraphNode, property: MiotPropertyCapability, operator: unknown, v1: unknown, v2?: unknown): ValidationError[] {
     const errors: ValidationError[] = [];
     if (property.list) {
@@ -62,7 +69,7 @@ function validateValue(node: GraphNode, property: MiotPropertyCapability, operat
         if (operator === 'between' && v2 === undefined) errors.push(error(node, 'range_between', `${property.desc} 使用 between 时必须提供 v2`));
         for (const value of values) {
             if (!validScalar(value, property.dtype)) errors.push(error(node, 'value_type', `${property.desc} 需要 ${property.dtype} 类型值`));
-            else if (typeof value === 'number' && (value < property.range.min || value > property.range.max || ((value - property.range.min) % property.range.step !== 0))) errors.push(error(node, 'range_value', `${property.desc} 值 ${value} 超出范围 ${JSON.stringify(property.range)}`));
+            else if (typeof value === 'number' && !inRange(value, property.range)) errors.push(error(node, 'range_value', `${property.desc} 值 ${value} 超出范围 ${JSON.stringify(property.range)}`));
         }
         if (typeof v1 === 'number' && typeof v2 === 'number' && v1 > v2) errors.push(error(node, 'range_order', `${property.desc} 的 v1 不能大于 v2`));
     }
@@ -75,7 +82,7 @@ function validateActionInputValue(node: GraphNode, property: MiotPropertyCapabil
     if (property.list && !property.list.some((item) => item.value === value)) {
         return [error(node, 'action_input_enum', `${property.desc} 不支持值 ${JSON.stringify(value)}；允许值 ${JSON.stringify(property.list.map((item) => item.value))}`)];
     }
-    if (property.range && typeof value === 'number' && (value < property.range.min || value > property.range.max || ((value - property.range.min) % property.range.step !== 0))) {
+    if (property.range && typeof value === 'number' && !inRange(value, property.range)) {
         return [error(node, 'action_input_range', `${property.desc} 值 ${value} 超出范围 ${JSON.stringify(property.range)}`)];
     }
     return [];
