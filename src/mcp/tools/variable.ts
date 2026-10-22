@@ -9,7 +9,9 @@ import { getVariables, setVariable, createVariable, deleteVariable, getVariableV
 import {
   ResponseFormatSchema,
   formatJson,
-  handleError,
+  textResult,
+  jsonResult,
+  errorResult,
   formatVariableListMarkdown,
 } from "../utils.js";
 
@@ -26,6 +28,13 @@ export const CreateVariableInputSchema = CreateVariableToolInputSchema.refine(
   { message: "value 必须与 type 匹配", path: ["value"] }
 );
 
+const VARIABLE_HINT = "变量过多，请用 mijia_get_variable_value 按 id 单独查询";
+
+/** 把核心层返回值包装为对象，便于作为 structuredContent */
+function asRecord(data: unknown): Record<string, unknown> {
+  return data && typeof data === "object" && !Array.isArray(data) ? (data as Record<string, unknown>) : { value: data };
+}
+
 export function registerVariableTools(
   server: McpServer,
   gatewayManager: GatewayManager
@@ -40,7 +49,8 @@ export function registerVariableTools(
 变量可用于规则间的数据传递和状态存储。
 
 参数：
-  - scope (string, optional): 变量作用域，默认 "global"`,
+  - scope (string, optional): 变量作用域，默认 "global"
+  - response_format: markdown 每个变量一行；json 为紧凑 JSON {count, scope, variables}`,
       inputSchema: z.object({
         scope: z.string().default("global").describe("变量作用域，默认 global"),
         response_format: ResponseFormatSchema.optional().default("markdown").describe("输出格式"),
@@ -56,33 +66,15 @@ export function registerVariableTools(
       try {
         gatewayManager.ensureConnected();
         const result = await getVariables(gatewayManager.gateway!, scope);
-
-        if (!result.success) {
-          return {
-            content: [{ type: "text", text: handleError(new Error(result.error), "get_variables") }],
-            isError: true,
-          };
-        }
+        if (!result.success) return errorResult(new Error(result.error), "get_variables");
 
         const variables = result.data ?? [];
-        const output = { variables, count: variables.length, scope };
+        const output = { count: variables.length, scope, variables };
 
-        if (response_format === "json") {
-          return {
-            content: [{ type: "text", text: formatJson(output) }],
-            structuredContent: output,
-          };
-        }
-
-        return {
-          content: [{ type: "text", text: formatVariableListMarkdown(variables, scope) }],
-          structuredContent: output,
-        };
+        if (response_format === "json") return jsonResult(output, { hint: VARIABLE_HINT });
+        return textResult(formatVariableListMarkdown(variables, scope), output, false, { hint: VARIABLE_HINT });
       } catch (error) {
-        return {
-          content: [{ type: "text", text: handleError(error, "get_variables") }],
-          isError: true,
-        };
+        return errorResult(error, "get_variables");
       }
     }
   );
@@ -114,23 +106,11 @@ export function registerVariableTools(
       try {
         gatewayManager.ensureConnected();
         const result = await setVariable(gatewayManager.gateway!, id, value, scope);
+        if (!result.success) return errorResult(new Error(result.error), "set_variable");
 
-        if (!result.success) {
-          return {
-            content: [{ type: "text", text: handleError(new Error(result.error), "set_variable") }],
-            isError: true,
-          };
-        }
-
-        return {
-          content: [{ type: "text", text: result.message || `变量 ${id} 已更新为 ${value}` }],
-          structuredContent: { success: true, id, value, scope },
-        };
+        return textResult(result.message || `变量 ${id} 已更新为 ${value}`, { success: true, id, value, scope });
       } catch (error) {
-        return {
-          content: [{ type: "text", text: handleError(error, "set_variable") }],
-          isError: true,
-        };
+        return errorResult(error, "set_variable");
       }
     }
   );
@@ -142,7 +122,7 @@ export function registerVariableTools(
       title: "创建变量",
       description: `创建一个新的自动化变量。
 
-⚠️ 网关要求 id 必须是纯字母数字（不能含下划线、连字符或中文），否则返回 "Invalid id format"。
+注意：网关要求 id 必须是纯字母数字（不能含下划线、连字符或中文），否则返回 "Invalid id format"。
 
 参数：
   - id (string): 变量ID，纯字母数字
@@ -162,30 +142,15 @@ export function registerVariableTools(
       try {
         const parsed = CreateVariableInputSchema.safeParse({ id, type, value, name, scope });
         if (!parsed.success) {
-          return {
-            content: [{ type: "text", text: parsed.error.issues.map((issue) => issue.message).join("；") }],
-            isError: true,
-          };
+          return textResult(parsed.error.issues.map((issue) => issue.message).join("；"), undefined, true);
         }
         gatewayManager.ensureConnected();
         const result = await createVariable(gatewayManager.gateway!, id, type, value, name, scope);
+        if (!result.success) return errorResult(new Error(result.error), "create_variable");
 
-        if (!result.success) {
-          return {
-            content: [{ type: "text", text: handleError(new Error(result.error), "create_variable") }],
-            isError: true,
-          };
-        }
-
-        return {
-          content: [{ type: "text", text: result.message || `变量 ${id} 创建成功` }],
-          structuredContent: { success: true, id, type, value, scope },
-        };
+        return textResult(result.message || `变量 ${id} 创建成功`, { success: true, id, type, value, scope });
       } catch (error) {
-        return {
-          content: [{ type: "text", text: handleError(error, "create_variable") }],
-          isError: true,
-        };
+        return errorResult(error, "create_variable");
       }
     }
   );
@@ -215,23 +180,11 @@ export function registerVariableTools(
       try {
         gatewayManager.ensureConnected();
         const result = await deleteVariable(gatewayManager.gateway!, id, scope);
+        if (!result.success) return errorResult(new Error(result.error), "delete_variable");
 
-        if (!result.success) {
-          return {
-            content: [{ type: "text", text: handleError(new Error(result.error), "delete_variable") }],
-            isError: true,
-          };
-        }
-
-        return {
-          content: [{ type: "text", text: result.message || `变量 ${id} 删除成功` }],
-          structuredContent: { success: true, id, scope },
-        };
+        return textResult(result.message || `变量 ${id} 删除成功`, { success: true, id, scope });
       } catch (error) {
-        return {
-          content: [{ type: "text", text: handleError(error, "delete_variable") }],
-          isError: true,
-        };
+        return errorResult(error, "delete_variable");
       }
     }
   );
@@ -261,23 +214,11 @@ export function registerVariableTools(
       try {
         gatewayManager.ensureConnected();
         const result = await getVariableValue(gatewayManager.gateway!, id, scope);
+        if (!result.success) return errorResult(new Error(result.error), "get_variable_value");
 
-        if (!result.success) {
-          return {
-            content: [{ type: "text", text: handleError(new Error(result.error), "get_variable_value") }],
-            isError: true,
-          };
-        }
-
-        return {
-          content: [{ type: "text", text: formatJson(result.data) }],
-          structuredContent: result.data as Record<string, unknown>,
-        };
+        return textResult(formatJson(result.data), asRecord(result.data));
       } catch (error) {
-        return {
-          content: [{ type: "text", text: handleError(error, "get_variable_value") }],
-          isError: true,
-        };
+        return errorResult(error, "get_variable_value");
       }
     }
   );
@@ -307,23 +248,11 @@ export function registerVariableTools(
       try {
         gatewayManager.ensureConnected();
         const result = await getVariableConfig(gatewayManager.gateway!, id, scope);
+        if (!result.success) return errorResult(new Error(result.error), "get_variable_config");
 
-        if (!result.success) {
-          return {
-            content: [{ type: "text", text: handleError(new Error(result.error), "get_variable_config") }],
-            isError: true,
-          };
-        }
-
-        return {
-          content: [{ type: "text", text: formatJson(result.data) }],
-          structuredContent: result.data as Record<string, unknown>,
-        };
+        return textResult(formatJson(result.data), asRecord(result.data));
       } catch (error) {
-        return {
-          content: [{ type: "text", text: handleError(error, "get_variable_config") }],
-          isError: true,
-        };
+        return errorResult(error, "get_variable_config");
       }
     }
   );

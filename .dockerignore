@@ -1,0 +1,26 @@
+# 只把构建 MCP 所需的文件送进构建上下文
+node_modules
+.next
+dist
+out
+build
+coverage
+.git
+.github
+.vscode
+.idea
+.sessionstore
+.agents
+ref
+docs
+tests
+*.md
+*.log
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+Dockerfile
+.dockerignore
+deploy/docker-compose.yml
+deploy/.env*

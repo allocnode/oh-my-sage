@@ -49,9 +49,16 @@ npx tsx <script.ts>      # Run single TypeScript file
 
 **Global command**: `npm link` creates `oh-my-sage-mcp` in PATH
 
-**Local testing**: `oh-my-sage-mcp` (stdio mode)
+**Local testing**: `oh-my-sage-mcp` (stdio mode, default)
 
-**Configuration** (for OpenCode/Claude/Cursor):
+**HTTP mode**: `oh-my-sage-mcp --http` (or `MCP_TRANSPORT=http`) serves Streamable HTTP at `/mcp` plus `GET /healthz`. One long-lived process shares a single gateway login and draft store across all client sessions, so the one-time passcode survives client restarts. Env: `MCP_HTTP_HOST` (default `127.0.0.1`), `MCP_HTTP_PORT` (default `3790`), `MCP_AUTH_TOKEN` (required when not bound to loopback), `MCP_ALLOWED_HOSTS`, `MCP_SESSION_TTL_MINUTES`. Implementation in `src/mcp/http.ts`.
+
+**Deployment modes** (user picks one at install; see README):
+- stdio: client spawns the process (default; heavy concurrency spams warnings in OpenCode 1.19.x because of Bun + SDK stdio `drain` listeners)
+- Local PC service: `deploy/install-local.ps1` (Windows Scheduled Task) or `deploy/install-local.sh` (launchd / systemd --user), loopback only
+- Private server: `Dockerfile` + `deploy/docker-compose.yml` + `deploy/.env.example`
+
+**Configuration** (stdio, for OpenCode/Claude/Cursor):
 ```json
 {
   "mcpServers": {
@@ -62,6 +69,10 @@ npx tsx <script.ts>      # Run single TypeScript file
   }
 }
 ```
+
+HTTP clients use `{"url": "http://127.0.0.1:3790/mcp", "headers": {"Authorization": "Bearer <token>"}}`; OpenCode uses `"type": "remote"` with `"oauth": false`.
+
+**Output size**: tools return compact output by default. `mijia_get_graph` and `mijia_get_device` default to `detail="summary"`; pass `detail="full"` or `node_ids` for full objects. Edit existing rules with `mijia_patch_graph` (changed nodes only, `baseHash` from `mijia_get_graph`) rather than `mijia_update_graph` (full replace, kept for compatibility). Both validators accept a saved rule `id`; `mijia_validate_graph_capabilities` reports problems via `valid=false`, not `isError`.
 
 ## Skill System
 

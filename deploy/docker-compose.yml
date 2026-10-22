@@ -1,0 +1,32 @@
+# oh-my-sage MCP Server - Docker Compose 示例（私有服务器 / NAS）
+#
+# 1. 复制 deploy/.env.example 为 deploy/.env 并修改（不要提交 .env），需要设置：
+#      GATEWAY_URL、MCP_AUTH_TOKEN、MCP_ALLOWED_HOSTS，可选 MCP_PORT（默认 3790）
+# 2. 在 deploy 目录执行 docker compose up -d --build
+# 3. 客户端以 Streamable HTTP 连接 http://<服务器>:<MCP_PORT>/mcp，
+#    并携带请求头 Authorization: Bearer <MCP_AUTH_TOKEN>
+#
+# 网络要求：容器需能访问局域网内的米家网关（WebSocket），
+# 并能访问公网 miot-spec.org（校验设备能力时拉取 MIOT Spec）。
+# 普通端口映射即可，无需 network_mode: host。
+
+services:
+  oh-my-sage-mcp:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: oh-my-sage-mcp:local
+    container_name: oh-my-sage-mcp
+    restart: unless-stopped
+    ports:
+      - "${MCP_PORT:-3790}:3790"
+    environment:
+      GATEWAY_URL: ${GATEWAY_URL:-}
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:?请在 .env 中设置 MCP_AUTH_TOKEN}
+      MCP_HTTP_HOST: 0.0.0.0
+      MCP_HTTP_PORT: "3790"
+      # 监听 0.0.0.0 时必须列出客户端使用的主机名/IP，否则请求会因 Host 校验返回 403
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:?请在 .env 中设置 MCP_ALLOWED_HOSTS}
+    labels:
+      # 镜像在本地构建，禁止 Watchtower 尝试从镜像仓库拉取更新
+      com.centurylinklabs.watchtower.enable: "false"

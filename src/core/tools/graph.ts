@@ -7,8 +7,11 @@ import { randomInt } from 'node:crypto';
 import type { Graph, GraphNode, GraphSummary, CreateGraphInput, UpdateGraphInput, ValidationError, DeviceUsageNode, DeviceUsageReport, DeviceUsage } from '../types/graph';
 import type { DeviceListResponse } from '../types/device';
 import type { ToolResponse } from '../types';
-import { validateGraph, layoutNodes } from './base';
+import { validateGraph, layoutNodes, mapLimit } from './base';
 import { validateGraphCapabilitiesWithGateway } from './capabilityValidation';
+
+/** 全量扫描规则时的并发上限 */
+const GRAPH_SCAN_CONCURRENCY = 6;
 
 function nextGraphId(): string {
     return String(randomInt(1_000_000_000_000, 10_000_000_000_000));
@@ -237,8 +240,35 @@ export async function updateGraph(gateway: GatewayClient, id: string, input: Upd
         const existing = await gateway.callApi<Graph>('getGraph', { id }, 10000);
         const graphList = await gateway.callApi('getGraphList', {}, 10000);
         const graphInfo = Array.isArray(graphList)
-            ? graphList.find((g: Graph) => g.id === id)
+            ? graphList.find((g: Graph) => g.id === id) as GraphListInfo | undefined
             : null;
+        return await writeGraphNodes(gateway, id, existing, { ...input, graphInfo: graphInfo ?? null });
+    } catch (error) {
+        return { success: false, error: `更新规则失败: ${error}` };
+    }
+}
+
+/** getGraphList 中单条规则的元信息 */
+export interface GraphListInfo {
+    enable?: boolean;
+    userData?: { name?: string; transform?: { x: number; y: number; scale: number; rotate: number } };
+}
+
+/**
+ * 基于已读取的规则写入（不再读取网关）：规范化 → 保留坐标 → 布局 → 结构校验 → 能力校验 → setGraph。
+ * 提供 graphInfo 键（可为 null）时，name/enable/transform 回退值取自规则列表（updateGraph 语义）；
+ * 未提供时回退到 existing.cfg（调用方已用 getGraph 补全 cfg）。
+ */
+export async function writeGraphNodes(
+    gateway: GatewayClient,
+    id: string,
+    existing: Graph,
+    input: UpdateGraphInput & { graphInfo?: GraphListInfo | null }
+): Promise<ToolResponse> {
+    try {
+        const graphInfo: GraphListInfo | null | undefined = 'graphInfo' in input
+            ? input.graphInfo
+            : { enable: existing.cfg?.enable, userData: existing.cfg?.userData };
 
         const inputNodes = input.nodes || existing.nodes;
         const processedNodes = inputNodes.map((node) => ({
@@ -273,12 +303,12 @@ export async function updateGraph(gateway: GatewayClient, id: string, input: Upd
             nodes: processedNodes,
             cfg: {
                 id,
-                enable: input.enable ?? existing.cfg?.enable ?? (graphInfo as unknown as { enable?: boolean })?.enable ?? false,
+                enable: input.enable ?? existing.cfg?.enable ?? graphInfo?.enable ?? false,
                 uiType: 'graph',
                 userData: {
-                    name: input.name || (graphInfo as unknown as { userData?: { name?: string } })?.userData?.name || '规则',
+                    name: input.name || graphInfo?.userData?.name || '规则',
                     lastUpdateTime: Date.now(),
-                    transform: (graphInfo as unknown as { userData?: { transform?: { x: number; y: number; scale: number; rotate: number } } })?.userData?.transform || { x: 0, y: 0, scale: 1, rotate: 0 },
+                    transform: graphInfo?.userData?.transform || { x: 0, y: 0, scale: 1, rotate: 0 },
                 },
             },
         };
@@ -287,7 +317,8 @@ export async function updateGraph(gateway: GatewayClient, id: string, input: Upd
             const errors = validateGraph(graph);
             const errorList = errors.filter((e: { level: string }) => e.level === 'error');
             if (errorList.length > 0) {
-                return { success: false, error: `规则校验失败（${errorList.length} 个错误），请修复后重试` };
+                const details = errorList.slice(0, 10).map((item) => `[${item.nodeId}] ${item.message}`).join('；');
+                return { success: false, error: `规则校验失败（${errorList.length} 个错误）：${details}${errorList.length > 10 ? '；…' : ''}` };
             }
             const capabilityReport = await validateGraphCapabilitiesWithGateway(gateway, graph);
             if (!capabilityReport.valid) return { success: false, error: `规则能力校验失败: ${capabilityReport.errors.map((item) => item.message).join('；')}` };
@@ -409,13 +440,20 @@ export async function findDeviceUsage(
         const orphanGraphs = new Map<string, string[]>();
         const unreadableGraphs: string[] = [];
 
-        for (const summary of summaries) {
-            const graphName = summary.userData?.name || summary.id;
-            let nodes: GraphNode[];
+        // 并发拉取（上限 6），再按列表顺序处理，保证输出顺序与串行一致
+        const fetched = await mapLimit(summaries, GRAPH_SCAN_CONCURRENCY, async (summary) => {
             try {
                 const graph = await gateway.callApi<Graph>('getGraph', { id: summary.id }, 10000);
-                nodes = graph.nodes || [];
+                return graph.nodes || [];
             } catch {
+                return null;
+            }
+        });
+
+        for (const [index, summary] of summaries.entries()) {
+            const graphName = summary.userData?.name || summary.id;
+            const nodes = fetched[index];
+            if (!nodes) {
                 unreadableGraphs.push(summary.id);
                 continue;
             }

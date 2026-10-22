@@ -2,7 +2,7 @@ import { GatewayClient } from '../gateway/client';
 import type { DeviceListResponse, MiotActionCapability, MiotEventCapability, MiotPropertyCapability } from '../types/device';
 import type { Graph, GraphNode, ValidationError } from '../types/graph';
 import type { Variable } from '../types';
-import { normalizeMiotSpec } from './device';
+import { fetchMiotSpec } from './device';
 
 export interface DeviceCapabilities {
     urn: string;
@@ -152,10 +152,24 @@ export function graphReferencesVariable(nodes: GraphNode[], id: string, scope: s
     return variableReferences(nodes).some((reference) => reference.id === id && reference.scope === scope);
 }
 
-export async function validateGraphVariablesWithGateway(gateway: GatewayClient, nodes: GraphNode[]): Promise<ValidationError[]> {
+/** 变量校验选项 */
+export interface VariableValidationOptions {
+    /** 本规则变量声明（创建前尚未写入网关）；scope 为 "rule" 的引用只在这里解析 */
+    ruleVariables?: Array<{ id: string; type: 'number' | 'string' }>;
+}
+
+export async function validateGraphVariablesWithGateway(gateway: GatewayClient, nodes: GraphNode[], options?: VariableValidationOptions): Promise<ValidationError[]> {
     const errors: ValidationError[] = [];
     const variablesByScope = new Map<string, Map<string, Variable>>();
+    const ruleVariables = options?.ruleVariables ? new Map(options.ruleVariables.map((variable) => [variable.id, variable])) : undefined;
     for (const reference of variableReferences(nodes)) {
+        // 本规则变量：只对照声明，不访问网关
+        if (reference.scope === 'rule') {
+            const declared = ruleVariables?.get(reference.id);
+            if (!ruleVariables || !declared) errors.push(error(reference.node, 'unknown_variable', `本规则变量 rule/${reference.id} 未声明；请在 variables 中声明`));
+            else if (reference.expectedType && declared.type !== reference.expectedType) errors.push(error(reference.node, 'variable_type_mismatch', `变量 rule/${reference.id} 类型为 ${declared.type}，需要 ${reference.expectedType}`));
+            continue;
+        }
         if (!variablesByScope.has(reference.scope)) {
             try {
                 const response = await gateway.callApi<Variable[] | Record<string, Variable>>('getVarList', { scope: reference.scope }, 10000);
@@ -238,25 +252,29 @@ export function validateGraphCapabilities(nodes: GraphNode[], devices: Map<strin
     return { valid: errors.length === 0, errors, warnings, inspectedDids: [...devices.keys()], inspectedUrns: [...new Set([...devices.values()].map((device) => device.urn))] };
 }
 
-export async function validateGraphCapabilitiesWithGateway(gateway: GatewayClient, graph: Graph): Promise<CapabilityValidationReport> {
+export async function validateGraphCapabilitiesWithGateway(gateway: GatewayClient, graph: Graph, options?: VariableValidationOptions): Promise<CapabilityValidationReport> {
     const dids = [...new Set(graph.nodes.map((node) => node.props.did).filter((did): did is string => typeof did === 'string'))];
     const response = dids.length > 0
         ? await gateway.callApi<DeviceListResponse>('getDevList', {}, 10000)
         : { devList: {} };
     const specs = new Map<string, DeviceCapabilities>();
+    const specErrors = new Map<string, unknown>();
     const errors: ValidationError[] = [];
+    // 不同 URN 并行拉取（fetchMiotSpec 自带缓存与超时）
+    const urns = [...new Set(dids.map((did) => response.devList?.[did]?.urn).filter((urn): urn is string => Boolean(urn)))];
+    await Promise.all(urns.map(async (urn) => {
+        try {
+            const normalized = await fetchMiotSpec(urn);
+            specs.set(urn, { urn, properties: normalized.properties || [], events: normalized.events || [], actions: (normalized.actions || []).flatMap((action) => action.type === 'action' && typeof action.aiid === 'number' ? [{ siid: action.siid, aiid: action.aiid, desc: action.desc, in: action.in || [] }] : []) });
+        } catch (cause) {
+            specErrors.set(urn, cause);
+        }
+    }));
     for (const did of dids) {
         const device = response.devList?.[did];
         if (!device?.urn) { errors.push({ nodeId: '(graph)', type: 'unknown_device', level: 'error', message: `设备 ${did} 缺少本地 URN` }); continue; }
-        if (!specs.has(device.urn)) {
-            try {
-                const result = await fetch(`https://miot-spec.org/miot-spec-v2/instance?type=${encodeURIComponent(device.urn)}`);
-                if (!result.ok) throw new Error(`HTTP ${result.status}`);
-                const normalized = normalizeMiotSpec(await result.json() as { services?: Array<never> });
-                specs.set(device.urn, { urn: device.urn, properties: normalized.properties || [], events: normalized.events || [], actions: (normalized.actions || []).flatMap((action) => action.type === 'action' && typeof action.aiid === 'number' ? [{ siid: action.siid, aiid: action.aiid, desc: action.desc, in: action.in || [] }] : []) });
-            } catch (cause) {
-                errors.push({ nodeId: '(graph)', type: 'spec_unavailable', level: 'error', message: `无法读取 ${device.urn} 的 MIOT Spec: ${String(cause)}` });
-            }
+        if (specErrors.has(device.urn)) {
+            errors.push({ nodeId: '(graph)', type: 'spec_unavailable', level: 'error', message: `无法读取 ${device.urn} 的 MIOT Spec: ${String(specErrors.get(device.urn))}` });
         }
     }
     const devices = new Map<string, DeviceCapabilities>();
@@ -265,7 +283,7 @@ export async function validateGraphCapabilitiesWithGateway(gateway: GatewayClien
         if (device?.urn && specs.has(device.urn)) devices.set(did, specs.get(device.urn)!);
     }
     const report = validateGraphCapabilities(graph.nodes, devices);
-    report.errors.push(...await validateGraphVariablesWithGateway(gateway, graph.nodes));
+    report.errors.push(...await validateGraphVariablesWithGateway(gateway, graph.nodes, options));
     report.errors.unshift(...errors);
     report.valid = report.errors.length === 0;
     return report;

@@ -232,6 +232,33 @@ export function validateGraph(graph: Graph): ValidationError[] {
     return errors;
 }
 
+// ==================== 并发控制 ====================
+
+/**
+ * 有界并发 map：最多同时运行 limit 个任务，结果按输入顺序返回。
+ * 任一任务失败时整体 reject（与 Promise.all 一致）。
+ */
+export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+    const results = new Array<R>(items.length);
+    let next = 0;
+    let failed = false;
+    const worker = async (): Promise<void> => {
+        while (!failed && next < items.length) {
+            const index = next++;
+            try {
+                results[index] = await fn(items[index], index);
+            } catch (error) {
+                // 失败后其余 worker 不再领取新任务
+                failed = true;
+                throw error;
+            }
+        }
+    };
+    const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, () => worker());
+    await Promise.all(workers);
+    return results;
+}
+
 export function layoutNodes(nodes: GraphNode[]): void {
     const NODE_WIDTH = 528;
     const NODE_HEIGHT = 164;

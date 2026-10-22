@@ -14,12 +14,18 @@ import {
   toggleGraph,
   validateGraph,
   validateGraphCapabilitiesWithGateway,
+  patchGraph,
 } from "../../core/index.js";
+import type { Graph, GraphNode } from "../../core/index.js";
 import {
   ResponseFormatSchema,
-  formatJson,
+  textResult,
+  jsonResult,
+  errorResult,
   handleError,
   formatGraphListMarkdown,
+  shapeGraphOutput,
+  compactIssues,
 } from "../utils.js";
 import { GraphDraftStore } from "./graphDraft.js";
 
@@ -37,11 +43,34 @@ const GraphNodeSchema = z.object({
   outputs: z.record(z.array(z.string())),
 });
 
+const GraphMergeSchema = z.object({
+  id: z.string().min(1).describe("要局部修改的节点 ID"),
+  props: z.record(z.unknown()).optional().describe("浅合并到 props；值为 null 删除该键"),
+  cfg: z.record(z.unknown()).optional().describe("浅合并到 cfg；值为 null 删除该键"),
+  outputs: z.record(z.array(z.string())).optional().describe("按端口整体替换 outputs"),
+  inputs: z.record(z.unknown()).optional().describe("浅合并到 inputs；值为 null 删除该键"),
+});
+
+const GRAPH_FULL_HINT = "请改用 detail=summary，或用 node_ids 只取需要的节点";
+const VALIDATE_HINT = "错误过多，请先修复前面的错误后重新校验";
+
+/** 缺少 cfg 时补一个默认 cfg，便于只传 {id, nodes} 校验 */
+function withDefaultCfg(graph: { id: string; nodes: unknown[]; cfg?: unknown }): Graph {
+  const cfg = (graph.cfg && typeof graph.cfg === "object" ? graph.cfg : {
+    id: graph.id,
+    enable: true,
+    uiType: "graph",
+    userData: { name: graph.id, lastUpdateTime: 0, transform: { x: 0, y: 0, scale: 1, rotate: 0 } },
+  }) as Graph["cfg"];
+  return { id: graph.id, nodes: (graph.nodes || []) as GraphNode[], cfg };
+}
+
 export function registerGraphTools(
   server: McpServer,
-  gatewayManager: GatewayManager
+  gatewayManager: GatewayManager,
+  // HTTP 模式下多个会话共享同一个草稿库，避免草稿和清理定时器随会话数倍增
+  drafts: GraphDraftStore = new GraphDraftStore()
 ): void {
-  const drafts = new GraphDraftStore();
   const restoreDraftError = (draftId: string, commitToken: string | undefined, error: unknown): string => {
     const original = handleError(error, "graph_draft_commit");
     if (!commitToken) return original;
@@ -52,23 +81,62 @@ export function registerGraphTools(
       return `${original}；草稿状态恢复失败: ${String(restoreError)}`;
     }
   };
+
+  /** 按 id 读取规则；失败返回错误文本 */
+  const loadGraph = async (id: string): Promise<{ graph?: Graph; error?: string }> => {
+    const result = await getGraph(gatewayManager.gateway!, id);
+    if (!result.success) return { error: result.error };
+    const graph = result.data!;
+    graph.nodes = graph.nodes || [];
+    return { graph };
+  };
+
+  // ==================== mijia_validate_graph_capabilities ====================
   server.registerTool(
     "mijia_validate_graph_capabilities",
     {
       title: "校验规则设备能力",
-      description: "根据真实 MIOT Spec 校验规则的 DID、URN、字段权限、类型、枚举值和数值范围。创建或更新设备节点前必须先通过本校验和 mijia_validate_graph。",
+      description: `根据真实 MIOT Spec 校验规则的 DID、URN、字段权限、类型、枚举值、数值范围以及变量引用。创建或更新设备节点前必须先通过本校验和 mijia_validate_graph。
+
+二选一：
+  - id: 校验网关中已保存的规则（服务端读取，无需上传整图）
+  - graph: 校验待提交的规则 {id, nodes, cfg?}
+可选 variables：与 mijia_create_graph 相同的本规则变量声明，使 scope="rule" 的引用在创建前即可通过校验。
+
+返回紧凑 JSON：{valid, errorCount, warningCount, errors:[{nodeId,type,message}], warnings, inspectedDeviceCount, inspectedUrnCount}`,
       inputSchema: z.object({
-        graph: z.object({ id: z.string(), nodes: z.array(z.any()), cfg: z.any() }).describe("完整规则对象"),
+        id: z.string().optional().describe("已保存规则的 ID（与 graph 二选一）"),
+        graph: z.object({ id: z.string(), nodes: z.array(z.any()), cfg: z.any().optional() }).optional().describe("待校验规则对象（与 id 二选一）"),
+        variables: z.array(GraphVariableSchema).optional().describe("本规则变量声明，用于创建前校验 scope=rule 的引用"),
       }),
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ graph }) => {
+    async ({ id, graph, variables }) => {
       try {
+        if (!graph && !id) return textResult("Error: 必须提供 id 或 graph 之一 (validate_graph_capabilities)", undefined, true);
         gatewayManager.ensureConnected();
-        const report = await validateGraphCapabilitiesWithGateway(gatewayManager.gateway!, graph as Parameters<typeof validateGraphCapabilitiesWithGateway>[1]);
-        return { content: [{ type: "text", text: formatJson(report) }], structuredContent: { ...report }, isError: !report.valid };
+        let target: Graph;
+        if (graph) {
+          target = withDefaultCfg(graph);
+        } else {
+          const loaded = await loadGraph(id!);
+          if (!loaded.graph) return errorResult(new Error(loaded.error), "validate_graph_capabilities");
+          target = loaded.graph;
+        }
+        const ruleVariables = variables?.map((variable) => ({ id: variable.id, type: variable.type }));
+        const report = await validateGraphCapabilitiesWithGateway(gatewayManager.gateway!, target, ruleVariables ? { ruleVariables } : undefined);
+        const output = {
+          valid: report.valid,
+          errorCount: report.errors.length,
+          warningCount: report.warnings.length,
+          errors: compactIssues(report.errors),
+          warnings: compactIssues(report.warnings),
+          inspectedDeviceCount: report.inspectedDids.length,
+          inspectedUrnCount: report.inspectedUrns.length,
+        };
+        return jsonResult(output, { hint: VALIDATE_HINT });
       } catch (error) {
-        return { content: [{ type: "text", text: handleError(error, "validate_graph_capabilities") }], isError: true };
+        return errorResult(error, "validate_graph_capabilities");
       }
     }
   );
@@ -80,10 +148,9 @@ export function registerGraphTools(
       title: "获取规则列表",
       description: `获取所有自动化规则的列表。
 
-返回：
-  - graphs: 规则列表
-  - count: 规则数量
-  - 包含 id, name, enable(启用状态)`,
+返回（紧凑）：
+  - markdown: 每条规则一行「名称 (id) [启用]/[禁用]」
+  - json: {count, graphs:[{id,name,enable}]}`,
       inputSchema: z.object({
         response_format: ResponseFormatSchema.optional().default("markdown").describe("输出格式"),
       }),
@@ -98,33 +165,16 @@ export function registerGraphTools(
       try {
         gatewayManager.ensureConnected();
         const result = await getGraphs(gatewayManager.gateway!);
+        if (!result.success) return errorResult(new Error(result.error), "get_graphs");
 
-        if (!result.success) {
-          return {
-            content: [{ type: "text", text: handleError(new Error(result.error), "get_graphs") }],
-            isError: true,
-          };
-        }
+        const graphs = (result.data ?? []).map(({ id, name, enable }) => ({ id, name, enable }));
+        const output = { count: graphs.length, graphs };
+        const hint = "规则过多，请用 response_format=json 或 mijia_find_device_usage 按设备查找";
 
-        const graphs = result.data ?? [];
-        const output = { graphs, count: graphs.length };
-
-        if (response_format === "json") {
-          return {
-            content: [{ type: "text", text: formatJson(output) }],
-            structuredContent: output,
-          };
-        }
-
-        return {
-          content: [{ type: "text", text: formatGraphListMarkdown(graphs) }],
-          structuredContent: output,
-        };
+        if (response_format === "json") return jsonResult(output, { hint });
+        return textResult(formatGraphListMarkdown(graphs), output, false, { hint });
       } catch (error) {
-        return {
-          content: [{ type: "text", text: handleError(error, "get_graphs") }],
-          isError: true,
-        };
+        return errorResult(error, "get_graphs");
       }
     }
   );
@@ -134,17 +184,17 @@ export function registerGraphTools(
     "mijia_get_graph",
     {
       title: "获取规则详情",
-      description: `获取指定自动化规则的详细信息。
+      description: `获取指定自动化规则。始终返回紧凑 JSON，并包含 hash（传给 mijia_patch_graph 的 baseHash 防止覆盖他人修改）。
 
-参数：
-  - id (string): 规则ID，从 mijia_get_graphs 获取
-
-返回：
-  - graph: 完整的规则对象
-  - 包含 nodes(节点列表), cfg(配置)`,
+  - detail="summary"（默认）：{id,name,enable,hash,nodeCount,note?,nodes:[{id,type,params?,out?}]}，不含坐标/URN/inputs，足以理解规则逻辑
+  - detail="full"：{hash, graph} 完整规则对象（体积大，超过 40000 字节会被截断）
+  - node_ids：只返回这些节点的完整 JSON 及规则头 {id,name,enable,hash,nodeCount}，修改前按需取节点首选此方式
+response_format 为兼容保留，markdown 与 json 输出相同。`,
       inputSchema: z.object({
         id: z.string().describe("规则ID"),
-        response_format: ResponseFormatSchema.optional().default("markdown").describe("输出格式"),
+        detail: z.enum(["summary", "full"]).optional().default("summary").describe("summary=紧凑摘要（默认），full=完整规则"),
+        node_ids: z.array(z.string()).optional().describe("只返回这些节点的完整 JSON"),
+        response_format: ResponseFormatSchema.optional().default("markdown").describe("兼容保留，输出均为紧凑 JSON"),
       }),
       annotations: {
         readOnlyHint: true,
@@ -153,50 +203,63 @@ export function registerGraphTools(
         openWorldHint: true,
       },
     },
-    async ({ id, response_format = "markdown" }) => {
+    async ({ id, detail = "summary", node_ids }) => {
       try {
         gatewayManager.ensureConnected();
-        const result = await getGraph(gatewayManager.gateway!, id);
+        const loaded = await loadGraph(id);
+        if (!loaded.graph) return errorResult(new Error(loaded.error), "get_graph");
 
-        if (!result.success) {
-          return {
-            content: [{ type: "text", text: handleError(new Error(result.error), "get_graph") }],
-            isError: true,
-          };
-        }
-
-        const graph = result.data!;
-
-        if (response_format === "json") {
-          return {
-            content: [{ type: "text", text: formatJson({ graph }) }],
-            structuredContent: { graph },
-          };
-        }
-
-        const lines = ["## 规则详情", ""];
-        lines.push(`**名称**: ${graph.cfg?.userData?.name || id}`);
-        lines.push(`**ID**: ${graph.id}`);
-        lines.push(`**状态**: ${graph.cfg?.enable ? "✅ 已启用" : "⛔ 已禁用"}`);
-        lines.push("");
-
-        if (graph.nodes && graph.nodes.length > 0) {
-          lines.push(`### 节点列表 (${graph.nodes.length})`);
-          for (const node of graph.nodes) {
-            lines.push(`- **${node.id}** (${node.type})`);
-          }
-          lines.push("");
-        }
-
-        return {
-          content: [{ type: "text", text: lines.join("\n") }],
-          structuredContent: { graph },
-        };
+        const output = shapeGraphOutput(loaded.graph, { detail, nodeIds: node_ids });
+        return jsonResult(output, { hint: node_ids && node_ids.length > 0 ? "请减少 node_ids 数量" : GRAPH_FULL_HINT });
       } catch (error) {
-        return {
-          content: [{ type: "text", text: handleError(error, "get_graph") }],
-          isError: true,
-        };
+        return errorResult(error, "get_graph");
+      }
+    }
+  );
+
+  // ==================== mijia_patch_graph ====================
+  server.registerTool(
+    "mijia_patch_graph",
+    {
+      title: "增量修改自动化规则",
+      description: `修改已有规则的首选方式：只发送变化的节点，无需整图重传。
+
+服务端会重新读取规则、应用补丁（先 removeIds 并清理指向被删节点的连线，再 upsert，最后 merge）、保留原有卡片坐标、执行结构校验与设备能力校验后写入。
+  - baseHash: 传入 mijia_get_graph 返回的 hash，规则已被他人修改时拒绝写入
+  - upsert: 完整节点，按 id 替换或新增；不能改已有节点的 type（需先 removeIds 再另行 upsert）
+  - merge: [{id, props?, cfg?, inputs?, outputs?}] 浅合并；值为 null 删除该键；outputs 按端口替换
+  - removeIds: 删除的节点 ID
+  - name / enable: 同时修改规则名称或启用状态
+备注节点(nop)在摘要里只列 noteIds，修改备注用 merge 改 cfg.contents 或先取 node_ids 全量。
+修改节点内容前请先阅读 mijia-automation Skill 的节点模板。只改 cfg.pos 坐标不算变化，会返回无变化且不写入；无变化时返回 message="无变化"。
+
+返回紧凑 JSON：{graphId, hash, changedIds, nodeCount, message}`,
+      inputSchema: z.object({
+        id: z.string().describe("规则ID"),
+        baseHash: z.string().optional().describe("mijia_get_graph 返回的 hash，用于拒绝过期修改"),
+        upsert: z.array(GraphNodeSchema).optional().describe("新增或整体替换的节点"),
+        merge: z.array(GraphMergeSchema).optional().describe("局部合并的节点字段"),
+        removeIds: z.array(z.string()).optional().describe("要删除的节点 ID"),
+        name: z.string().min(1).optional().describe("新规则名称"),
+        enable: z.boolean().optional().describe("是否启用"),
+      }),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
+    },
+    async ({ id, baseHash, upsert, merge, removeIds, name, enable }) => {
+      try {
+        gatewayManager.ensureConnected();
+        const result = await patchGraph(gatewayManager.gateway!, id, { baseHash, upsert, merge, removeIds, name, enable });
+        if (!result.success) return errorResult(new Error(result.error), "patch_graph");
+
+        const data = result.data!;
+        return jsonResult({ graphId: data.graphId, hash: data.hash, changedIds: data.changedIds, nodeCount: data.nodeCount, message: result.message ?? "" });
+      } catch (error) {
+        return errorResult(error, "patch_graph");
       }
     }
   );
@@ -208,7 +271,7 @@ export function registerGraphTools(
       title: "创建自动化规则",
       description: `创建新的自动化规则。
 
-⚠️ 重要：在调用此工具前，你必须先阅读并理解 mijia-automation Skill 中的规则创建指南（使用 Skill 工具加载）。该 Skill 包含：
+注意：在调用此工具前，你必须先阅读并理解 mijia-automation Skill 中的规则创建指南（使用 Skill 工具加载）。该 Skill 包含：
 - 完整的节点类型模板（deviceInput, deviceOutput, condition, timeRange, delay 等）
 - 节点连接规则（outputs 格式、state/event 节点区别）
 - 关键校验规则（节点ID格式、inputs/outputs 要求）
@@ -217,7 +280,7 @@ export function registerGraphTools(
 
 只有理解这些规则后才能正确构建 nodes 数组。小规则可直接使用本工具；超过 10 个节点的复杂规则应使用 graph_draft 工具分块上传，避免在上下文中重复传输完整节点图。
 
-系统会自动进行节点布局和连接完整性校验。
+系统会自动进行节点布局和连接完整性校验。创建前可用 mijia_validate_graph / mijia_validate_graph_capabilities 预检（后者接受同样的 variables，用于校验 scope="rule" 的引用）。
 
 参数：
   - name (string): 规则名称
@@ -248,25 +311,11 @@ export function registerGraphTools(
       try {
         gatewayManager.ensureConnected();
         const result = await createGraph(gatewayManager.gateway!, { name, nodes, variables, enable });
+        if (!result.success) return errorResult(new Error(result.error), "create_graph");
 
-        if (!result.success) {
-          return {
-            content: [{ type: "text", text: handleError(new Error(result.error), "create_graph") }],
-            isError: true,
-          };
-        }
-
-        const output = { graphId: result.data?.graphId, message: result.message };
-
-        return {
-          content: [{ type: "text", text: formatJson(output) }],
-          structuredContent: output,
-        };
+        return jsonResult({ graphId: result.data?.graphId, message: result.message });
       } catch (error) {
-        return {
-          content: [{ type: "text", text: handleError(error, "create_graph") }],
-          isError: true,
-        };
+        return errorResult(error, "create_graph");
       }
     }
   );
@@ -286,10 +335,9 @@ export function registerGraphTools(
     async ({ name, variables, enable }) => {
       try {
         const draftId = drafts.begin({ name, variables, enable });
-        const output = { draftId, nodeCount: 0, message: "草稿已创建，请分块追加节点" };
-        return { content: [{ type: "text", text: formatJson(output) }], structuredContent: { ...output } };
+        return jsonResult({ draftId, nodeCount: 0, message: "草稿已创建，请分块追加节点" });
       } catch (error) {
-        return { content: [{ type: "text", text: handleError(error, "graph_draft_begin") }], isError: true };
+        return errorResult(error, "graph_draft_begin");
       }
     }
   );
@@ -308,10 +356,9 @@ export function registerGraphTools(
     async ({ draftId, nodes }) => {
       try {
         const result = drafts.append(draftId, nodes);
-        const output = { draftId, ...result };
-        return { content: [{ type: "text", text: formatJson(output) }], structuredContent: { ...output } };
+        return jsonResult({ draftId, ...result });
       } catch (error) {
-        return { content: [{ type: "text", text: handleError(error, "graph_draft_append") }], isError: true };
+        return errorResult(error, "graph_draft_append");
       }
     }
   );
@@ -331,9 +378,9 @@ export function registerGraphTools(
     async ({ draftId, upsert = [], removeIds = [] }) => {
       try {
         const output = drafts.edit(draftId, upsert, removeIds);
-        return { content: [{ type: "text", text: formatJson(output) }], structuredContent: { ...output } };
+        return jsonResult({ ...output });
       } catch (error) {
-        return { content: [{ type: "text", text: handleError(error, "graph_draft_edit") }], isError: true };
+        return errorResult(error, "graph_draft_edit");
       }
     }
   );
@@ -349,9 +396,9 @@ export function registerGraphTools(
     async ({ draftId }) => {
       try {
         const output = drafts.status(draftId);
-        return { content: [{ type: "text", text: formatJson(output) }], structuredContent: { ...output } };
+        return jsonResult({ ...output });
       } catch (error) {
-        return { content: [{ type: "text", text: handleError(error, "graph_draft_status") }], isError: true };
+        return errorResult(error, "graph_draft_status");
       }
     }
   );
@@ -371,18 +418,16 @@ export function registerGraphTools(
         const commit = drafts.beginCommit(draftId);
         commitToken = commit.commitToken;
         if (commit.committedGraphId) {
-          const output = { graphId: commit.committedGraphId, message: "草稿已提交" };
-          return { content: [{ type: "text", text: formatJson(output) }], structuredContent: output };
+          return jsonResult({ graphId: commit.committedGraphId, message: "草稿已提交" });
         }
         const result = await createGraph(gatewayManager.gateway!, commit.input!);
         if (!result.success) {
-          return { content: [{ type: "text", text: restoreDraftError(draftId, commitToken, new Error(result.error)) }], isError: true };
+          return textResult(restoreDraftError(draftId, commitToken, new Error(result.error)), undefined, true);
         }
         const summary = drafts.completeCommit(draftId, result.data!.graphId, commitToken);
-        const output = { graphId: summary.graphId, nodeCount: summary.nodeCount, message: result.message };
-        return { content: [{ type: "text", text: formatJson(output) }], structuredContent: output };
+        return jsonResult({ graphId: summary.graphId, nodeCount: summary.nodeCount, message: result.message });
       } catch (error) {
-        return { content: [{ type: "text", text: restoreDraftError(draftId, commitToken, error) }], isError: true };
+        return textResult(restoreDraftError(draftId, commitToken, error), undefined, true);
       }
     }
   );
@@ -398,10 +443,9 @@ export function registerGraphTools(
     async ({ draftId }) => {
       try {
         const discarded = drafts.delete(draftId);
-        const output = { draftId, discarded };
-        return { content: [{ type: "text", text: formatJson(output) }], structuredContent: output };
+        return jsonResult({ draftId, discarded });
       } catch (error) {
-        return { content: [{ type: "text", text: handleError(error, "graph_draft_discard") }], isError: true };
+        return errorResult(error, "graph_draft_discard");
       }
     }
   );
@@ -411,26 +455,21 @@ export function registerGraphTools(
     "mijia_update_graph",
     {
       title: "更新自动化规则",
-      description: `更新现有自动化规则。
+      description: `更新现有自动化规则（兼容保留）。修改节点请优先使用 mijia_patch_graph，只发送变化的节点；本工具的 nodes 必须是完整节点列表，会整体替换。
 
-⚠️ 重要：如果更新 nodes 节点列表，你必须先阅读并理解 mijia-automation Skill 中的规则创建指南（使用 Skill 工具加载）。该 Skill 包含完整的节点模板、连接规则和校验要求。
-
-如果只需要更新规则名称或启用状态，无需加载 Skill。
+注意：如果更新 nodes 节点列表，你必须先阅读并理解 mijia-automation Skill 中的规则创建指南（使用 Skill 工具加载）。只更新名称或启用状态时无需加载 Skill。
 
 参数：
   - id (string): 规则ID
   - name (string, optional): 新规则名称
-  - nodes (array, optional): 新节点列表（必须符合 mijia-automation Skill 中的模板规范）
+  - nodes (array, optional): 完整的新节点列表（必须符合 mijia-automation Skill 中的模板规范）
   - enable (boolean, optional): 是否启用
 
-返回：
-  - success: 是否成功
-  
-注意：更新 nodes 时会自动进行节点布局（保留原有位置信息）和连接完整性校验。`,
+更新 nodes 时会自动进行节点布局（保留原有位置信息）、连接完整性校验与设备能力校验。`,
       inputSchema: z.object({
         id: z.string().describe("规则ID"),
         name: z.string().optional().describe("新规则名称"),
-        nodes: z.array(z.any()).optional().describe("新节点列表"),
+        nodes: z.array(z.any()).optional().describe("完整的新节点列表"),
         enable: z.boolean().optional().describe("是否启用"),
       }),
       annotations: {
@@ -444,23 +483,11 @@ export function registerGraphTools(
       try {
         gatewayManager.ensureConnected();
         const result = await updateGraph(gatewayManager.gateway!, id, { name, nodes, enable });
+        if (!result.success) return errorResult(new Error(result.error), "update_graph");
 
-        if (!result.success) {
-          return {
-            content: [{ type: "text", text: handleError(new Error(result.error), "update_graph") }],
-            isError: true,
-          };
-        }
-
-        return {
-          content: [{ type: "text", text: result.message || "更新成功" }],
-          structuredContent: { success: true },
-        };
+        return textResult(result.message || "更新成功", { success: true });
       } catch (error) {
-        return {
-          content: [{ type: "text", text: handleError(error, "update_graph") }],
-          isError: true,
-        };
+        return errorResult(error, "update_graph");
       }
     }
   );
@@ -490,23 +517,11 @@ export function registerGraphTools(
       try {
         gatewayManager.ensureConnected();
         const result = await deleteGraph(gatewayManager.gateway!, id);
+        if (!result.success) return errorResult(new Error(result.error), "delete_graph");
 
-        if (!result.success) {
-          return {
-            content: [{ type: "text", text: handleError(new Error(result.error), "delete_graph") }],
-            isError: true,
-          };
-        }
-
-        return {
-          content: [{ type: "text", text: result.message || "删除成功" }],
-          structuredContent: { success: true, id },
-        };
+        return textResult(result.message || "删除成功", { success: true, id });
       } catch (error) {
-        return {
-          content: [{ type: "text", text: handleError(error, "delete_graph") }],
-          isError: true,
-        };
+        return errorResult(error, "delete_graph");
       }
     }
   );
@@ -536,23 +551,11 @@ export function registerGraphTools(
       try {
         gatewayManager.ensureConnected();
         const result = await toggleGraph(gatewayManager.gateway!, id, enable);
+        if (!result.success) return errorResult(new Error(result.error), "toggle_graph");
 
-        if (!result.success) {
-          return {
-            content: [{ type: "text", text: handleError(new Error(result.error), "toggle_graph") }],
-            isError: true,
-          };
-        }
-
-        return {
-          content: [{ type: "text", text: result.message || (enable ? "规则已启用 ✅" : "规则已禁用 ❌") }],
-          structuredContent: { success: true, id, enable },
-        };
+        return textResult(result.message || (enable ? "规则已启用 [启用]" : "规则已禁用 [禁用]"), { success: true, id, enable });
       } catch (error) {
-        return {
-          content: [{ type: "text", text: handleError(error, "toggle_graph") }],
-          isError: true,
-        };
+        return errorResult(error, "toggle_graph");
       }
     }
   );
@@ -562,9 +565,9 @@ export function registerGraphTools(
     "mijia_validate_graph",
     {
       title: "校验规则完整性",
-      description: `校验自动化规则的节点连接完整性。
+      description: `校验自动化规则的节点连接完整性（结构校验，不检查设备能力；设备与变量引用请用 mijia_validate_graph_capabilities）。
 
-⚠️ 建议：在调用此工具前，先阅读 mijia-automation Skill 了解节点构建规范（使用 Skill 工具加载）。该 Skill 包含所有节点模板和连接规则。
+注意：在调用此工具前，建议先阅读 mijia-automation Skill 了解节点构建规范（使用 Skill 工具加载）。
 
 此校验器会检查 mijia-automation Skill 中定义的关键规则：
 - 节点 ID 格式（只允许 [0-9a-zA-Z]）
@@ -576,36 +579,18 @@ export function registerGraphTools(
 - timeRange 可连接 condition.condition，或经 logicOr/logicAnd/logicNot 最终连接 condition.condition
 - 所有节点的 props、inputs、outputs 必须存在
 
-参数：
-  - graph (object): 完整规则对象
-    - id (string): 规则ID
-    - nodes (array): 节点列表（必须符合 mijia-automation Skill 规范）
-    - cfg (object): 规则配置
+二选一：
+  - id: 校验网关中已保存的规则（服务端读取，无需上传整图）
+  - graph: {id, nodes, cfg?}，cfg 可省略
 
-返回：
-  - errors: 错误列表
-  - warnings: 警告列表
-  - valid: 是否有效（无错误）`,
+返回紧凑 JSON：{valid, errorCount, warningCount, errors:[{nodeId,type,message}], warnings}`,
       inputSchema: z.object({
+        id: z.string().optional().describe("已保存规则的 ID（与 graph 二选一）"),
         graph: z.object({
           id: z.string().describe("规则ID"),
           nodes: z.array(z.any()).describe("节点列表"),
-          cfg: z.object({
-            id: z.string().describe("规则ID"),
-            enable: z.boolean().describe("是否启用"),
-            uiType: z.string().describe("UI类型"),
-            userData: z.object({
-              name: z.string().describe("规则名称"),
-              lastUpdateTime: z.number().describe("最后更新时间戳"),
-              transform: z.object({
-                x: z.number(),
-                y: z.number(),
-                scale: z.number(),
-                rotate: z.number(),
-              }),
-            }),
-          }),
-        }).describe("完整规则对象"),
+          cfg: z.any().optional().describe("规则配置，可省略"),
+        }).optional().describe("待校验规则对象（与 id 二选一）"),
       }),
       annotations: {
         readOnlyHint: true,
@@ -614,45 +599,31 @@ export function registerGraphTools(
         openWorldHint: true,
       },
     },
-    async ({ graph }) => {
+    async ({ id, graph }) => {
       try {
-        const errors = validateGraph(graph);
-        const errorList = errors.filter((e) => e.level === "error");
-        const warnList = errors.filter((e) => e.level === "warn");
-
+        if (!graph && !id) return textResult("Error: 必须提供 id 或 graph 之一 (validate_graph)", undefined, true);
+        let target: Graph;
+        if (graph) {
+          target = withDefaultCfg(graph);
+        } else {
+          gatewayManager.ensureConnected();
+          const loaded = await loadGraph(id!);
+          if (!loaded.graph) return errorResult(new Error(loaded.error), "validate_graph");
+          target = loaded.graph;
+        }
+        const issues = validateGraph(target);
+        const errorList = issues.filter((e) => e.level === "error");
+        const warnList = issues.filter((e) => e.level === "warn");
         const output = {
           valid: errorList.length === 0,
-          errors: errorList,
-          warnings: warnList,
           errorCount: errorList.length,
           warningCount: warnList.length,
+          errors: compactIssues(errorList),
+          warnings: compactIssues(warnList),
         };
-
-        const lines = [errorList.length === 0 ? "✅ 规则校验通过" : `❌ 规则校验失败 (${errorList.length} 个错误)`];
-
-        if (errorList.length > 0) {
-          lines.push("", "### 错误");
-          for (const e of errorList) {
-            lines.push(`- [${e.nodeId}] ${e.message}`);
-          }
-        }
-
-        if (warnList.length > 0) {
-          lines.push("", "### 警告");
-          for (const w of warnList) {
-            lines.push(`- [${w.nodeId}] ${w.message}`);
-          }
-        }
-
-        return {
-          content: [{ type: "text", text: lines.join("\n") }],
-          structuredContent: output,
-        };
+        return jsonResult(output, { hint: VALIDATE_HINT });
       } catch (error) {
-        return {
-          content: [{ type: "text", text: handleError(error, "validate_graph") }],
-          isError: true,
-        };
+        return errorResult(error, "validate_graph");
       }
     }
   );
