@@ -11,7 +11,7 @@ import { getConfig, type Config } from "./config.js";
 import { resolveHttpOptions, startHttpServer } from "./http.js";
 import { createServer } from "./server.js";
 
-function useHttpTransport(): boolean {
+function isHttpTransport(): boolean {
   return process.argv.slice(2).includes("--http") || (process.env.MCP_TRANSPORT || "").toLowerCase() === "http";
 }
 
@@ -24,7 +24,7 @@ async function main(): Promise<void> {
     ? { gatewayUrl: process.env.GATEWAY_URL }
     : undefined;
 
-  if (useHttpTransport()) {
+  if (isHttpTransport()) {
     const running = await startHttpServer({ ...resolveHttpOptions(process.env), userConfig });
     console.error(`oh-my-sage MCP Server running on ${running.url}`);
 
