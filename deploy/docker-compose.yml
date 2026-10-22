@@ -1,11 +1,8 @@
 # oh-my-sage MCP Server - Docker Compose 示例（私有服务器 / NAS）
 #
-# 1. 在本目录创建 .env（不要提交），示例：
-#      GATEWAY_URL=http://<网关局域网IP>
-#      MCP_AUTH_TOKEN=<随机长字符串，例如 openssl rand -hex 32>
-#      MCP_ALLOWED_HOSTS=<客户端访问时使用的主机名或IP，逗号分隔>
-#      MCP_PORT=3790
-# 2. docker compose up -d --build
+# 1. 复制 deploy/.env.example 为 deploy/.env 并修改（不要提交 .env），需要设置：
+#      GATEWAY_URL、MCP_AUTH_TOKEN、MCP_ALLOWED_HOSTS，可选 MCP_PORT（默认 3790）
+# 2. 在 deploy 目录执行 docker compose up -d --build
 # 3. 客户端以 Streamable HTTP 连接 http://<服务器>:<MCP_PORT>/mcp，
 #    并携带请求头 Authorization: Bearer <MCP_AUTH_TOKEN>
 #
