@@ -3,7 +3,7 @@ name: mijia-automation
 description: 米家自动化极客版规则与变量管理指南。当用户想要创建智能场景、设备联动、定时任务、条件触发，或创建、读取、修改、删除自动化变量时使用此 Skill。
 metadata:
   author: oh-my-sage
-  version: "3.8"
+  version: "3.9"
 ---
 
 # 米家自动化规则创建
@@ -61,7 +61,7 @@ video → ui-sample → graph-diff → local-tested → gateway-roundtrip → ru
 
 - 作用域名 = `R` + **规则 ID 的数字部分**，去掉 `graph_` 前缀。例：规则 `graph_1700000000000` → 作用域 `R1700000000000`；规则 `1700000000000` → `R1700000000000`。可用 `mijia_call_api getVarScopeList` 核对。
 - 节点里写 `"scope": "rule"` 的自动替换**只发生在** `mijia_create_graph` 和 `mijia_graph_draft_begin`（经由 `variables` 参数）。
-- **`mijia_update_graph` 没有 `variables` 参数**。给已有规则新增变量时，必须先单独调用 `mijia_create_variable` 并显式传真实作用域字符串，节点里也要写真实作用域，不能写 `"rule"`。
+- **`mijia_patch_graph` 和 `mijia_update_graph` 都没有 `variables` 参数**。给已有规则新增变量时，必须先单独调用 `mijia_create_variable` 并显式传真实作用域字符串，节点里也要写真实作用域，不能写 `"rule"`。
 
 ### 工具缺失或写入失败时
 
@@ -166,7 +166,7 @@ video → ui-sample → graph-diff → local-tested → gateway-roundtrip → ru
 4. **调用能力校验**：MCP 使用 `mijia_validate_graph_capabilities`，Web Agent 使用 `validate_graph_capabilities`，确认设备字段、权限、类型、范围、动作参数和变量引用
 5. **调用结构校验**：MCP 使用 `mijia_validate_graph`，Web Agent 使用 `validate_graph`，检查连接完整性
 6. **修复错误**：任一校验器报告 error 时修复并重新校验，直到全部通过
-7. **调用 create_graph 或 update_graph**：两项校验通过后调用创建/更新工具；工具内部仍会再次校验
+7. **调用 create_graph 或修改工具**：两项校验通过后调用创建/修改工具；工具内部仍会再次校验。MCP 修改已有规则优先用 `mijia_patch_graph`（见下文）
 8. **确认结果**：回读规则并确认启用状态、变量作用域和关键节点
 
 设计表使用固定格式：
@@ -185,7 +185,7 @@ video → ui-sample → graph-diff → local-tested → gateway-roundtrip → ru
 
 `deviceGet.output2` 只表示比较结果不满足，不是查询失败或 unknown 专口。无法直接区分 unknown 时，用初始化/就绪变量、最后更新时间、在线状态或保守停止表达；不要虚构第三个输出端口。
 
-MCP 模式下**创建**超过 10 个节点的复杂规则时，不要调用两个独立校验工具后再重复发送完整图。先确认当前 MCP 工具列表包含 `mijia_graph_draft_*`，然后使用分块草稿流程。草稿工具不用于更新现有规则；复杂更新仍使用 `mijia_update_graph`：
+MCP 模式下**创建**超过 10 个节点的复杂规则时，不要调用两个独立校验工具后再重复发送完整图。先确认当前 MCP 工具列表包含 `mijia_graph_draft_*`，然后使用分块草稿流程。草稿工具不用于更新现有规则（更新见下文 `mijia_patch_graph` 一节）。草稿流程：
 
 1. `mijia_graph_draft_begin` 创建草稿并取得 `draftId`。
 2. `mijia_graph_draft_append` 每批追加 5 至 10 个节点，每个节点只上传一次。
@@ -195,7 +195,15 @@ MCP 模式下**创建**超过 10 个节点的复杂规则时，不要调用两�
 
 小规则和 Web Agent 继续使用原双校验流程。草稿工具缺失时不要虚构调用，改用原流程。复杂规则草稿提交失败时会保留；成功响应丢失或重复提交时返回同一个规则 ID。
 
-**⚠️ create_graph / update_graph 内置了校验逻辑。如果节点连接有 error 级别的问题，工具会返回错误并拒绝调用 setGraph。修复后重新调用即可。**
+### MCP 修改已有规则：优先 `mijia_patch_graph`
+
+1. `mijia_get_graph` 默认返回紧凑摘要和 `hash`；需要某几个节点的完整 JSON 时传 `node_ids`，不要默认取 `detail="full"`。
+2. `mijia_patch_graph` 只发送变化：`upsert` 整节点替换或新增，`merge` 浅合并字段（值为 `null` 删除该键），`removeIds` 删除节点并清理指向它的连线；传 `baseHash` 防止覆盖他人修改。服务端会保留原有卡片坐标并执行两项校验。
+3. 修改前后可用 `mijia_validate_graph` / `mijia_validate_graph_capabilities` 传 `id` 校验已保存规则，不必上传整图；能力校验看返回的 `valid` 字段。
+4. `mijia_update_graph` 是整图替换，仅在补丁无法表达时使用（兼容保留）。
+5. Web Agent 没有补丁工具，继续使用 update_graph。
+
+**⚠️ create_graph / patch_graph / update_graph 内置了校验逻辑。如果节点连接有 error 级别的问题，工具会返回错误并拒绝调用 setGraph。修复后重新调用即可。**
 
 ## 节点模板（直接复制使用）
 

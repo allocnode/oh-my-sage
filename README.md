@@ -40,7 +40,7 @@ Oh My Sage 是一个**工具驱动的 AI Agent**，通过自然语言对话帮�
 git clone https://github.com/allocnode/oh-my-sage.git && cd oh-my-sage && npm install && npm run build:mcp && npm link
 ```
 
-配置 MCP Server（在支持 MCP 的 AI 助手中）：
+配置 MCP Server（在支持 MCP 的 AI 助手中，默认 stdio 方式）：
 
 ```json
 {
@@ -52,6 +52,8 @@ git clone https://github.com/allocnode/oh-my-sage.git && cd oh-my-sage && npm in
   }
 }
 ```
+
+也可以改为本机常驻或部署到私有服务器，见下文 [选择部署方式](#选择部署方式)。
 
 然后直接对话使用：
 - "帮我查看米家设备"
@@ -96,7 +98,21 @@ npm link
 
 构建完成后，`oh-my-sage-mcp` 命令会被链接到系统 PATH。
 
-**Step 2: 配置 MCP Server**
+**Step 2: 选择部署方式并配置 MCP Server**
+
+#### 选择部署方式
+
+三种方式任选其一，工具和功能完全相同，区别在于 MCP Server 进程跑在哪里：
+
+| 方式 | 进程位置 | 特点 |
+|------|----------|------|
+| **stdio（默认）** | 由 AI 助手按需启动 | 最简单，但在 OpenCode 1.19.x 上大量并发调用会刷屏；客户端重启后需重新输入登录码 |
+| **本机 PC 常驻** | 本机后台服务，只监听 `127.0.0.1` | 登录一次网关，客户端重启后无需重新输入登录码；多个客户端共享 |
+| **私有服务器** | NAS / 家庭服务器上的 Docker 容器 | 同上，且多台电脑共用一个网关登录；需设置访问 token |
+
+> 关于刷屏：OpenCode 1.19.x 内置的 Bun 运行时与 MCP SDK 的 stdio 客户端配合时，每个并发请求都会挂一个 `drain` 监听器，十余个并发调用就会在界面上打印大段 `MaxListenersExceededWarning`，看起来像渲染崩溃（相关讨论：[anomalyco/opencode#42724](https://github.com/anomalyco/opencode/issues/42724)、[modelcontextprotocol/typescript-sdk#842](https://github.com/modelcontextprotocol/typescript-sdk/issues/842)）。后两种方式走 HTTP，不经过这条路径。
+
+**方式一：stdio（默认）**
 
 在 MCP Host 配置文件中添加：
 
@@ -112,6 +128,70 @@ npm link
   }
 }
 ```
+
+**方式二：本机 PC 常驻**
+
+构建后运行安装脚本，注册为当前用户登录时自动启动的后台服务（默认端口 3790）：
+
+```bash
+# Windows（计划任务，无需管理员权限）
+pwsh deploy/install-local.ps1 -GatewayUrl http://192.168.0.4
+# macOS（launchd）/ Linux（systemd --user）
+bash deploy/install-local.sh -g http://192.168.0.4
+```
+
+可选参数：端口 `-Port` / `-p`，访问 token `-Token` / `-t`（本机回环地址可不设）。卸载：`-Uninstall` / `-u`。脚本结束时会打印下面的客户端配置。
+
+**方式三：私有服务器（Docker）**
+
+```bash
+cp deploy/.env.example deploy/.env   # 填入 GATEWAY_URL、MCP_AUTH_TOKEN、MCP_ALLOWED_HOSTS
+cd deploy && docker compose up -d --build
+```
+
+监听非回环地址时必须设置 `MCP_AUTH_TOKEN`，否则拒绝启动。容器需要能访问局域网内的网关和公网 `miot-spec.org`。
+
+**HTTP 方式的客户端配置（方式二、三）**
+
+OpenCode（`opencode.json`）：
+
+```json
+{
+  "mcp": {
+    "oh-my-sage": {
+      "type": "remote",
+      "url": "http://127.0.0.1:3790/mcp",
+      "oauth": false,
+      "headers": { "Authorization": "Bearer <MCP_AUTH_TOKEN>" }
+    }
+  }
+}
+```
+
+其他支持 Streamable HTTP 的客户端：
+
+```json
+{
+  "mcpServers": {
+    "oh-my-sage": {
+      "url": "http://127.0.0.1:3790/mcp",
+      "headers": { "Authorization": "Bearer <MCP_AUTH_TOKEN>" }
+    }
+  }
+}
+```
+
+私有服务器把地址换成服务器的主机名或 IP（需列入 `MCP_ALLOWED_HOSTS`）；未设置 token 时去掉 `headers`。健康检查：`GET /healthz`。
+
+HTTP 模式也可手动启动：`oh-my-sage-mcp --http`（或 `MCP_TRANSPORT=http`），环境变量：
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `MCP_HTTP_HOST` | `127.0.0.1` | 监听地址 |
+| `MCP_HTTP_PORT` | `3790` | 监听端口 |
+| `MCP_AUTH_TOKEN` | 无 | Bearer token，监听非回环地址时必填 |
+| `MCP_ALLOWED_HOSTS` | 回环地址 | 允许的 Host 主机名，逗号分隔（防 DNS rebinding） |
+| `MCP_SESSION_TTL_MINUTES` | `30` | 空闲会话回收时间 |
 
 **Step 3: 安装 Skill（创建/更新规则必需）**
 
@@ -154,20 +234,22 @@ Skill 位于 `.agents/skills/mijia-automation/` 目录下：
 | `mijia_disconnect` | 断开网关连接 |
 | `mijia_status` | 检查连接状态 |
 | `mijia_get_devices` | 获取设备列表 |
-| `mijia_get_device` | 获取设备详情+MIOT Spec能力 |
+| `mijia_get_device` | 获取设备详情+MIOT Spec能力（默认精简摘要，`detail=full` 取完整对象） |
 | `mijia_get_graphs` | 获取自动化规则列表 |
-| `mijia_get_graph` | 获取规则详情 |
+| `mijia_get_graph` | 获取规则详情（默认紧凑摘要，可按 `node_ids` 取指定节点；返回 `hash`） |
 | `mijia_create_graph` | 创建规则（⚠️需 Skill 支持） |
-| `mijia_update_graph` | 更新规则（⚠️更新 nodes 需 Skill） |
+| `mijia_patch_graph` | 增量修改规则：只发送变化的节点，`baseHash` 防止覆盖他人修改（修改规则首选） |
+| `mijia_update_graph` | 整图替换规则（兼容保留，⚠️更新 nodes 需 Skill） |
 | `mijia_delete_graph` | 删除规则 |
 | `mijia_toggle_graph` | 启用/禁用规则 |
-| `mijia_validate_graph` | 校验规则完整性 |
+| `mijia_validate_graph` | 校验规则完整性（可传已保存规则的 `id`） |
+| `mijia_validate_graph_capabilities` | 按真实 MIOT Spec 校验设备能力（可传 `id`，结果看 `valid` 字段） |
 | `mijia_get_variables` | 获取变量列表 |
 | `mijia_set_variable` | 设置变量值 |
 
 **⚠️ 关于创建/更新规则**：
 
-`mijia_create_graph` 和 `mijia_update_graph` 需要 `mijia-automation` Skill 的支持。
+`mijia_create_graph`、`mijia_patch_graph` 和 `mijia_update_graph` 需要 `mijia-automation` Skill 的支持。
 
 - 如果已安装 Skill，AI 助手会自动激活，无需手动操作
 - 如果 AI 助手提示需要安装 Skill，请参考上面的 "Step 3" 进行安装
@@ -312,10 +394,12 @@ oh-my-sage/
 │   │   ├── tools/         # 工具实现
 │   │   └── types/         # 类型定义
 │   └── mcp/                # MCP Server
-│       ├── index.ts        # 入口
+│       ├── index.ts        # 入口（stdio / --http）
+│       ├── http.ts         # Streamable HTTP 传输
 │       ├── config.ts       # 配置
 │       ├── utils.ts        # 工具函数
 │       └── tools/          # MCP 工具
+├── deploy/                 # 部署：docker-compose、本机常驻安装脚本
 ├── dist/mcp/               # MCP 构建输出
 ├── ref/                    # 参考文档
 └── docs/                   # 设计文档
