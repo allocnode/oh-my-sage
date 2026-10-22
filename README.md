@@ -33,6 +33,8 @@ Oh My Sage 是一个**工具驱动的 AI Agent**，通过自然语言对话帮�
 | 🔌 **MCP Server** | 开发场景 | 集成到 AI 编程助手，作为工具直接调用 |
 | 🌐 **Web 界面** | 日常使用 | 浏览器交互，可视化界面 |
 
+**环境要求**：Node.js 18.17 或更高版本（Windows 本机常驻脚本需要 20.6+，Docker 镜像自带 Node.js 22），以及与米家极客版网关处于同一局域网。
+
 ### MCP 方式（一行命令安装）
 
 ```bash
@@ -40,26 +42,13 @@ Oh My Sage 是一个**工具驱动的 AI Agent**，通过自然语言对话帮�
 git clone https://github.com/allocnode/oh-my-sage.git && cd oh-my-sage && npm install && npm run build:mcp && npm link
 ```
 
-配置 MCP Server（在支持 MCP 的 AI 助手中，默认 stdio 方式）：
+接着在 AI 助手中配置 MCP Server：最简单的是 stdio 方式，也可以改为本机常驻或部署到私有服务器，三种方式的配置见下文 [选择部署方式](#选择部署方式)。
 
-```json
-{
-  "mcpServers": {
-    "oh-my-sage-mcp": {
-      "command": ["oh-my-sage-mcp"],
-      "environment": { "GATEWAY_URL": "http://192.168.0.4" }
-    }
-  }
-}
-```
-
-也可以改为本机常驻或部署到私有服务器，见下文 [选择部署方式](#选择部署方式)。
-
-然后直接对话使用：
+配置好后直接对话使用：
 - "帮我查看米家设备"
 - "创建一个每天晚上8点关闭客厅灯的自动化规则"
 
-> ⚠️ **关于 Skill**：创建/更新自动化规则需要安装 `mijia-automation` Skill。安装后 AI 助手会自动激活，无需手动操作。
+> ⚠️ **关于 Skill**：创建/修改自动化规则需要让 AI 助手能读到 `mijia-automation` Skill，安装方式见下文 Step 3。
 
 ### Web 方式（一行命令启动）
 
@@ -75,7 +64,7 @@ cp .env.example .env
 npm run dev
 ```
 
-访问 http://localhost:3000 即可使用。
+访问 http://localhost:3000 即可使用。Web 方式直接读取仓库内的 Skill，无需另行安装。
 
 ---
 
@@ -87,7 +76,7 @@ npm run dev
 
 #### 完整安装步骤
 
-**Step 1: 构建并安装 MCP Server**
+**Step 1: 构建并安装 MCP Server**（已按快速开始执行过可跳过）
 
 ```bash
 cd oh-my-sage
@@ -112,18 +101,32 @@ npm link
 
 > 关于刷屏：OpenCode 1.19.x 内置的 Bun 运行时与 MCP SDK 的 stdio 客户端配合时，每个并发请求都会挂一个 `drain` 监听器，十余个并发调用就会在界面上打印大段 `MaxListenersExceededWarning`，看起来像渲染崩溃（相关讨论：[anomalyco/opencode#42724](https://github.com/anomalyco/opencode/issues/42724)、[modelcontextprotocol/typescript-sdk#842](https://github.com/modelcontextprotocol/typescript-sdk/issues/842)）。后两种方式走 HTTP，不经过这条路径。
 
+`GATEWAY_URL` 是米家网关的局域网地址（下文以 `http://192.168.0.5` 为例，请改成你的）。不设置也能启动，但首次调用 `mijia_auth` 时需要传 `gateway_url` 参数。
+
 **方式一：stdio（默认）**
 
-在 MCP Host 配置文件中添加：
+OpenCode（`opencode.json`）：
+
+```json
+{
+  "mcp": {
+    "oh-my-sage": {
+      "type": "local",
+      "command": ["oh-my-sage-mcp"],
+      "environment": { "GATEWAY_URL": "http://192.168.0.5" }
+    }
+  }
+}
+```
+
+Claude Desktop、Cursor 等使用 `mcpServers` 格式的客户端：
 
 ```json
 {
   "mcpServers": {
-    "oh-my-sage-mcp": {
-      "command": ["oh-my-sage-mcp"],
-      "environment": {
-        "GATEWAY_URL": "http://192.168.0.4"
-      }
+    "oh-my-sage": {
+      "command": "oh-my-sage-mcp",
+      "env": { "GATEWAY_URL": "http://192.168.0.5" }
     }
   }
 }
@@ -134,10 +137,10 @@ npm link
 构建后运行安装脚本，注册为当前用户登录时自动启动的后台服务（默认端口 3790）：
 
 ```bash
-# Windows（计划任务，无需管理员权限）
-pwsh deploy/install-local.ps1 -GatewayUrl http://192.168.0.4
+# Windows（计划任务，无需管理员权限，需要 Node.js 20.6+）
+pwsh deploy/install-local.ps1 -GatewayUrl http://192.168.0.5
 # macOS（launchd）/ Linux（systemd --user）
-bash deploy/install-local.sh -g http://192.168.0.4
+bash deploy/install-local.sh -g http://192.168.0.5
 ```
 
 可选参数：端口 `-Port` / `-p`，访问 token `-Token` / `-t`（本机回环地址可不设）。卸载：`-Uninstall` / `-u`。脚本结束时会打印下面的客户端配置。
@@ -190,28 +193,24 @@ HTTP 模式也可手动启动：`oh-my-sage-mcp --http`（或 `MCP_TRANSPORT=htt
 | `MCP_HTTP_HOST` | `127.0.0.1` | 监听地址 |
 | `MCP_HTTP_PORT` | `3790` | 监听端口 |
 | `MCP_AUTH_TOKEN` | 无 | Bearer token，监听非回环地址时必填 |
-| `MCP_ALLOWED_HOSTS` | 回环地址 | 允许的 Host 主机名，逗号分隔（防 DNS rebinding） |
+| `MCP_ALLOWED_HOSTS` | 回环地址及非通配的监听地址 | 额外允许的 Host 主机名，逗号分隔（防 DNS rebinding；回环地址始终允许） |
 | `MCP_SESSION_TTL_MINUTES` | `30` | 空闲会话回收时间 |
 
-**Step 3: 安装 Skill（创建/更新规则必需）**
+**Step 3: 安装 Skill（创建/修改规则必需）**
 
-**关于 Skill 的自动激活**：
-- 如果涉及到**创建规则**或**更新规则**，你需要先安装 `mijia-automation` Skill
-- 一旦安装了 Skill，AI 助手会在需要时**自动激活**，无需手动操作
-- 如果你没有安装 Skill，AI 助手会提示你需要先安装
+创建或修改规则前，AI 助手需要读取 `mijia-automation` Skill 中的节点模板和连接规则。支持 Skill 的客户端安装后会在需要时自动加载，无需手动操作。
 
-**安装方式**：
+Skill 位于 `.agents/skills/mijia-automation/`，安装时请复制**整个目录**（`references/` 下的参考文档会被按需读取）：
 
-Skill 位于 `.agents/skills/mijia-automation/` 目录下：
-
-- **OpenCode**: 复制到 `~/.config/opencode/skills/`
-- **Claude/Cursor**: 将 `SKILL.md` 内容添加到 `AGENTS.md` 或对话中
+- **OpenCode**：在本仓库目录内启动时会自动发现 `.agents/skills/`；在其他目录使用时，复制到 `~/.config/opencode/skills/` 或 `~/.agents/skills/`
+- **Claude Code**：复制到 `~/.claude/skills/`
+- **不支持 Skill 的客户端**：将 `SKILL.md` 内容添加到项目规则文件（如 `AGENTS.md`）或对话中
 
 **Step 4: 连接并使用**
 
-在 OpenCode 中直接对话：
+在 AI 助手中直接对话：
 
-1. **连接网关**：
+1. **连接网关**（登录码是一次性的，每次连接都要从网关获取新的；HTTP 方式下已有会话登录过则无需再输入）：
    ```
    帮我连接米家网关，登录码是 123456
    ```
@@ -228,37 +227,77 @@ Skill 位于 `.agents/skills/mijia-automation/` 目录下：
 
 #### MCP 工具列表
 
+共 28 个工具。
+
+**连接**
+
 | 工具 | 描述 |
 |------|------|
-| `mijia_auth` | 连接米家网关（必须先调用） |
+| `mijia_auth` | 连接米家网关（需 6 位一次性登录码；已连接时无需再次认证） |
 | `mijia_disconnect` | 断开网关连接 |
 | `mijia_status` | 检查连接状态 |
+
+**设备**
+
+| 工具 | 描述 |
+|------|------|
 | `mijia_get_devices` | 获取设备列表 |
-| `mijia_get_device` | 获取设备详情+MIOT Spec能力（默认精简摘要，`detail=full` 取完整对象） |
+| `mijia_get_device` | 获取设备详情+MIOT Spec能力（默认精简摘要，`detail=full` 取完整对象，`siids` 只看指定服务） |
+| `mijia_find_device_usage` | 一次扫描全部规则，找出引用指定设备的规则和节点，并列出残留引用 |
+
+**规则**
+
+| 工具 | 描述 |
+|------|------|
 | `mijia_get_graphs` | 获取自动化规则列表 |
 | `mijia_get_graph` | 获取规则详情（默认紧凑摘要，可按 `node_ids` 取指定节点；返回 `hash`） |
-| `mijia_create_graph` | 创建规则（⚠️需 Skill 支持） |
+| `mijia_create_graph` | 创建规则，可同时创建本规则变量（⚠️需 Skill 支持） |
 | `mijia_patch_graph` | 增量修改规则：只发送变化的节点，`baseHash` 防止覆盖他人修改（修改规则首选） |
 | `mijia_update_graph` | 整图替换规则（兼容保留，⚠️更新 nodes 需 Skill） |
-| `mijia_delete_graph` | 删除规则 |
+| `mijia_delete_graph` | 删除规则，并清理对应的本规则变量 |
 | `mijia_toggle_graph` | 启用/禁用规则 |
-| `mijia_validate_graph` | 校验规则完整性（可传已保存规则的 `id`） |
-| `mijia_validate_graph_capabilities` | 按真实 MIOT Spec 校验设备能力（可传 `id`，结果看 `valid` 字段） |
+| `mijia_validate_graph` | 校验规则结构完整性（可传已保存规则的 `id`） |
+| `mijia_validate_graph_capabilities` | 按真实 MIOT Spec 校验设备能力和变量引用（可传 `id`，结果看 `valid` 字段） |
+
+**复杂规则草稿**（超过 10 个节点时分块上传，草稿 30 分钟后过期）
+
+| 工具 | 描述 |
+|------|------|
+| `mijia_graph_draft_begin` | 开始草稿 |
+| `mijia_graph_draft_append` | 追加一批节点（每批最多 25 个） |
+| `mijia_graph_draft_edit` | 按节点 ID 替换、增加或删除草稿节点 |
+| `mijia_graph_draft_status` | 查看草稿状态 |
+| `mijia_graph_draft_commit` | 校验并提交草稿，创建规则 |
+| `mijia_graph_draft_discard` | 丢弃草稿（不删除已创建的规则） |
+
+**变量**
+
+| 工具 | 描述 |
+|------|------|
 | `mijia_get_variables` | 获取变量列表 |
+| `mijia_get_variable_value` | 获取单个变量的当前值 |
+| `mijia_get_variable_config` | 获取单个变量的配置 |
+| `mijia_create_variable` | 创建变量（id 只能是字母数字） |
 | `mijia_set_variable` | 设置变量值 |
+| `mijia_delete_variable` | 删除变量（仍被规则引用时拒绝删除） |
 
-**⚠️ 关于创建/更新规则**：
+**维护**
 
-`mijia_create_graph`、`mijia_patch_graph` 和 `mijia_update_graph` 需要 `mijia-automation` Skill 的支持。
+| 工具 | 描述 |
+|------|------|
+| `mijia_call_api` | 直接调用网关原始 API，仅限白名单内的只读方法，用于排障 |
 
-- 如果已安装 Skill，AI 助手会自动激活，无需手动操作
-- 如果 AI 助手提示需要安装 Skill，请参考上面的 "Step 3" 进行安装
+**⚠️ 关于创建/修改规则**：
+
+`mijia_create_graph`、`mijia_patch_graph`、`mijia_update_graph` 和草稿工具构建节点时需要 `mijia-automation` Skill 的支持，安装方式见上面的 Step 3。
 
 **Skill 提供的内容**：
 - 完整的节点类型模板（deviceInput, deviceOutput, condition, timeRange, delay 等）
 - 节点连接规则（outputs 格式、state/event 节点区别）
 - 关键校验规则（节点ID格式、inputs/outputs 要求）
 - dtype 映射规则（bool/int/float/string）
+- 变量的创建、引用与生命周期
+- 常用自动化模式库与案例索引（`references/`）
 
 ---
 
@@ -310,7 +349,7 @@ GATEWAY_URL=http://192.168.0.5
 npm run dev
 ```
 
-访问 http://localhost:3000，输入网关登录码即可使用。
+访问 http://localhost:3000，输入网关登录码即可使用。Web 方式必须在 `.env` 中设置 `GATEWAY_URL`；`LLM_TEMPERATURE` 可选，默认 0.7。会话记录保存在仓库下的 `.sessionstore/` 目录。
 
 ---
 
@@ -323,7 +362,7 @@ npm run dev
 
 Agent: 我来帮你查看米家设备。首先连接到网关。
 
-[mijia_auth] passcode: 960622, gateway_url: http://192.168.0.4
+[mijia_auth] passcode: 123456, gateway_url: http://192.168.0.5
 → 连接成功
 
 [mijia_get_devices] 
@@ -366,7 +405,7 @@ Agent: [思考中...] 我来帮你设置这个自动化。
 
 ## 🤖 支持的模型
 
-支持任何 **OpenAI 兼容接口**的模型：
+Web 界面支持任何 **OpenAI 兼容接口**的模型（MCP 方式使用 AI 助手自身的模型，无需配置）：
 
 | 服务商 | Base URL | 模型示例 |
 |--------|----------|----------|
@@ -384,11 +423,11 @@ Agent: [思考中...] 我来帮你设置这个自动化。
 oh-my-sage/
 ├── .agents/
 │   └── skills/
-│       └── mijia-automation/ # 米家自动化 Skill（MCP创建规则必需）
+│       └── mijia-automation/ # 米家自动化 Skill（创建/修改规则必需）
 ├── src/
-│   ├── app/                 # Next.js Web 界面
+│   ├── app/                 # Next.js Web 界面与 API 路由
 │   ├── components/          # React 组件
-│   ├── server/             # Web 后端
+│   ├── server/             # Web 后端（Agent、LLM、会话、Skill 加载）
 │   ├── core/               # Core 库（MCP 和 Web 共用）
 │   │   ├── gateway/        # 网关客户端
 │   │   ├── tools/         # 工具实现
@@ -399,10 +438,12 @@ oh-my-sage/
 │       ├── config.ts       # 配置
 │       ├── utils.ts        # 工具函数
 │       └── tools/          # MCP 工具
+├── tests/                  # 单元测试（npm run test:unit）
 ├── deploy/                 # 部署：docker-compose、本机常驻安装脚本
+├── Dockerfile              # MCP Server 镜像（HTTP 模式）
 ├── dist/mcp/               # MCP 构建输出
 ├── ref/                    # 参考文档
-└── docs/                   # 设计文档
+└── docs/                   # 设计文档与验证记录
 ```
 
 ---
@@ -411,21 +452,22 @@ oh-my-sage/
 
 - [米家网关参考文档](ref/GUIDE.md) - 网关 API、设备结构、规则格式
 - [Agent Skills 规范](.agents/skills/mijia-automation/SKILL.md) - 自动化规则创建指南
+- [自动化知识索引](.agents/skills/mijia-automation/references/index.md) - 模式库与案例索引
 - [设计文档](docs/) - 架构设计和重构说明
 
 ---
 
 ## 🔧 Agent Skills
 
-Oh My Sage 支持可扩展的 Agent Skills 系统。
+Oh My Sage 支持可扩展的 Agent Skills 系统。Web 界面启动时加载仓库 `.agents/skills/` 和用户目录 `~/.agents/skills/` 下的 Skill（同名时仓库优先）；MCP 方式由 AI 助手自身的 Skill 机制加载，见上文 Step 3。
 
 ### 渐进式披露
 
 | 层级 | 内容 | Token 成本 | 触发时机 |
 |------|------|-----------|----------|
 | Catalog | name + description | ~50-100/Skill | 系统初始化 |
-| Instructions | 完整 SKILL.md | <5000 tokens | 自动/手动激活 |
-| Resources | references/ 等 | 按需加载 | read_skill_file |
+| Instructions | 完整 SKILL.md | 数千 tokens | `activate_skill` 自动/手动激活 |
+| Resources | references/ 等 | 按需加载 | `read_skill_file` |
 
 ---
 
@@ -435,7 +477,7 @@ Oh My Sage 支持可扩展的 Agent Skills 系统。
 
 1. Fork 本仓库
 2. 创建特性分支 (`git checkout -b feature/amazing-feature`)
-3. 提交更改 (`git commit -m 'Add amazing feature'`)
+3. 提交更改 (`git commit -m 'Add amazing feature'`)，提交前运行 `npm run lint` 和 `npm run test:unit`
 4. 推送到分支 (`git push origin feature/amazing-feature`)
 5. 开启 Pull Request
 
