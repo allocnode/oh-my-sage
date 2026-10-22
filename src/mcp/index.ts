@@ -2,42 +2,17 @@
 /**
  * oh-my-sage MCP Server
  * 米家自动化极客版 MCP 服务
+ *
+ * 默认 stdio 传输；传 --http 或设置 MCP_TRANSPORT=http 时改用 Streamable HTTP。
  */
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { createGatewayManager } from "../core/index.js";
 import { getConfig, type Config } from "./config.js";
-import {
-  registerAuthTools,
-  registerDeviceTools,
-  registerGraphTools,
-  registerMiscTools,
-  registerVariableTools,
-} from "./tools/index.js";
+import { resolveHttpOptions, startHttpServer } from "./http.js";
+import { createServer } from "./server.js";
 
-/**
- * 创建并配置 MCP Server
- */
-function createServer(userConfig?: Config): McpServer {
-  const config = getConfig(userConfig);
-
-  const server = new McpServer({
-    name: "oh-my-sage",
-    version: "1.0.0",
-  });
-
-  // 创建 Gateway 管理器
-  const gatewayManager = createGatewayManager();
-
-  // 注册所有工具
-  registerAuthTools(server, gatewayManager);
-  registerDeviceTools(server, gatewayManager);
-  registerGraphTools(server, gatewayManager);
-  registerVariableTools(server, gatewayManager);
-  registerMiscTools(server, gatewayManager);
-
-  return server;
+function useHttpTransport(): boolean {
+  return process.argv.slice(2).includes("--http") || (process.env.MCP_TRANSPORT || "").toLowerCase() === "http";
 }
 
 /**
@@ -49,6 +24,31 @@ async function main(): Promise<void> {
     ? { gatewayUrl: process.env.GATEWAY_URL }
     : undefined;
 
+  if (useHttpTransport()) {
+    const running = await startHttpServer({ ...resolveHttpOptions(process.env), userConfig });
+    console.error(`oh-my-sage MCP Server running on ${running.url}`);
+
+    // ==================== 优雅退出 ====================
+    let stopping = false;
+    const shutdown = (signal: string): void => {
+      if (stopping) return;
+      stopping = true;
+      console.error(`收到 ${signal}，正在关闭 MCP Server`);
+      const force = setTimeout(() => process.exit(1), 5000);
+      force.unref();
+      running.close().then(
+        () => process.exit(0),
+        (error: unknown) => {
+          console.error("关闭失败:", error);
+          process.exit(1);
+        }
+      );
+    };
+    process.on("SIGINT", () => shutdown("SIGINT"));
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
+    return;
+  }
+
   const server = createServer(userConfig);
   const transport = new StdioServerTransport();
 
@@ -58,7 +58,7 @@ async function main(): Promise<void> {
 
 // 启动服务器
 main().catch((error) => {
-  console.error("Fatal error:", error);
+  console.error("Fatal error:", error instanceof Error ? error.message : error);
   process.exit(1);
 });
 

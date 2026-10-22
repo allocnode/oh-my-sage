@@ -67,9 +67,10 @@ function withDefaultCfg(graph: { id: string; nodes: unknown[]; cfg?: unknown }):
 
 export function registerGraphTools(
   server: McpServer,
-  gatewayManager: GatewayManager
+  gatewayManager: GatewayManager,
+  // HTTP 模式下多个会话共享同一个草稿库，避免草稿和清理定时器随会话数倍增
+  drafts: GraphDraftStore = new GraphDraftStore()
 ): void {
-  const drafts = new GraphDraftStore();
   const restoreDraftError = (draftId: string, commitToken: string | undefined, error: unknown): string => {
     const original = handleError(error, "graph_draft_commit");
     if (!commitToken) return original;
