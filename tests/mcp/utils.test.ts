@@ -38,6 +38,6 @@ test('Markdown 对不存在的设备ID给出明确提示，不伪装成离线设
 
     assert.match(markdown, /不存在该设备ID/);
     assert.match(markdown, /这不是「设备离线」/);
-    assert.doesNotMatch(markdown, /离线 ❌/, '不得渲染成普通离线设备');
+    assert.doesNotMatch(markdown, /\[离线\]/, '不得渲染成普通离线设备');
     assert.doesNotMatch(markdown, /型号: 未知/, '不得渲染出会被误读为真实设备的占位型号');
 });

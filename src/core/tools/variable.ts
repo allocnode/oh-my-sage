@@ -7,6 +7,7 @@ import type { Variable } from '../types';
 import type { ToolResponse } from '../types';
 import type { Graph } from '../types/graph';
 import { graphReferencesVariable } from './capabilityValidation';
+import { mapLimit } from './base';
 
 export async function getVariables(gateway: GatewayClient, scope: string = 'global'): Promise<ToolResponse<Variable[]>> {
     try {
@@ -31,7 +32,7 @@ export async function setVariable(gateway: GatewayClient, id: string, value: str
 
 /**
  * 创建变量。
- * ⚠️ 网关要求 id 必须是纯字母数字（不能含下划线/连字符），否则返回 "Invalid id format"。
+ * 注意：网关要求 id 必须是纯字母数字（不能含下划线/连字符），否则返回 "Invalid id format"。
  */
 export async function createVariable(
     gateway: GatewayClient,
@@ -53,11 +54,13 @@ export async function createVariable(
 export async function deleteVariable(gateway: GatewayClient, id: string, scope: string = 'global'): Promise<ToolResponse> {
     try {
         const graphList = await gateway.callApi<Array<{ id: string }>>('getGraphList', {}, 10000);
-        const references: string[] = [];
-        for (const summary of Array.isArray(graphList) ? graphList : []) {
+        const summaries = Array.isArray(graphList) ? graphList : [];
+        // 并发读取全部规则；任一规则读取失败即整体失败，避免误删仍被引用的变量
+        const referenced = await mapLimit(summaries, 6, async (summary) => {
             const graph = await gateway.callApi<Graph>('getGraph', { id: summary.id }, 10000);
-            if (graphReferencesVariable(graph.nodes || [], id, scope)) references.push(summary.id);
-        }
+            return graphReferencesVariable(graph.nodes || [], id, scope);
+        });
+        const references = summaries.filter((_, index) => referenced[index]).map((summary) => summary.id);
         if (references.length > 0) return { success: false, error: `变量 ${scope}/${id} 仍被规则引用: ${references.join(', ')}` };
         await gateway.callApi('deleteVar', { scope, id }, 10000);
         return { success: true, message: `变量 ${id} 删除成功` };

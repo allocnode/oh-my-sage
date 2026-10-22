@@ -6,7 +6,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { GatewayManager } from "../../core/gateway/manager.js";
 import { getConfig } from "../config.js";
-import { handleError } from "../utils.js";
+import { formatJson, textResult } from "../utils.js";
 
 export function registerAuthTools(
   server: McpServer,
@@ -52,29 +52,20 @@ Error Handling:
     },
     async ({ passcode, gateway_url }) => {
       if (gatewayManager.isConnected()) {
-        return {
-          content: [{ type: "text", text: JSON.stringify({ success: false, error: "已连接，请先调用 mijia_disconnect" }) }],
-          isError: true,
-        };
+        return textResult(formatJson({ success: false, error: "已连接，请先调用 mijia_disconnect" }), undefined, true);
       }
       try {
         const url = gateway_url || config.gatewayUrl;
         if (!url) {
-          return {
-            content: [{ type: "text", text: JSON.stringify({ success: false, error: "未配置网关地址：请在 gateway_url 参数中提供网关地址，或在 MCP 配置里设置 GATEWAY_URL 环境变量" }) }],
-            isError: true,
-          };
+          return textResult(formatJson({ success: false, error: "未配置网关地址：请在 gateway_url 参数中提供网关地址，或在 MCP 配置里设置 GATEWAY_URL 环境变量" }), undefined, true);
         }
         await gatewayManager.connect(passcode, url);
-        return {
-          content: [{ type: "text", text: JSON.stringify({ success: true, message: "连接成功", gateway_url: url }) }],
-          structuredContent: { success: true, connected: true, gateway_url: url },
-        };
+        return textResult(
+          formatJson({ success: true, message: "连接成功", gateway_url: url }),
+          { success: true, connected: true, gateway_url: url }
+        );
       } catch (error) {
-        return {
-          content: [{ type: "text", text: JSON.stringify({ success: false, error: String(error) }) }],
-          isError: true,
-        };
+        return textResult(formatJson({ success: false, error: String(error) }), undefined, true);
       }
     }
   );
@@ -98,15 +89,9 @@ Error Handling:
     async () => {
       try {
         await gatewayManager.disconnect();
-        return {
-          content: [{ type: "text", text: JSON.stringify({ success: true, message: "已断开" }) }],
-          structuredContent: { success: true, connected: false },
-        };
+        return textResult(formatJson({ success: true, message: "已断开" }), { success: true, connected: false });
       } catch (error) {
-        return {
-          content: [{ type: "text", text: JSON.stringify({ success: false, error: String(error) }) }],
-          isError: true,
-        };
+        return textResult(formatJson({ success: false, error: String(error) }), undefined, true);
       }
     }
   );
@@ -130,10 +115,7 @@ Returns:
     },
     async () => {
       const connected = gatewayManager.isConnected();
-      return {
-        content: [{ type: "text", text: JSON.stringify({ connected }) }],
-        structuredContent: { connected },
-      };
+      return textResult(formatJson({ connected }), { connected });
     }
   );
 }

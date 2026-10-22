@@ -156,6 +156,39 @@ export function normalizeMiotSpec(spec: MiotSpec): Pick<DeviceInfo, 'properties'
     return { properties, events, triggers, actions, readable };
 }
 
+// ==================== MIOT Spec 缓存 ====================
+
+const MIOT_SPEC_TIMEOUT_MS = 10000;
+
+/** 进程内缓存：按 URN 保存进行中的 Promise，并发调用共享同一次请求 */
+const miotSpecCache = new Map<string, Promise<ReturnType<typeof normalizeMiotSpec>>>();
+
+/**
+ * 拉取并规范化 MIOT Spec。成功结果按 URN 缓存，失败会移除缓存以便重试。
+ * 失败时抛出异常（调用方负责转换为工具错误）。
+ */
+export async function fetchMiotSpec(urn: string): Promise<ReturnType<typeof normalizeMiotSpec>> {
+    const cached = miotSpecCache.get(urn);
+    if (cached) return cached;
+    const pending = (async () => {
+        const response = await fetch(`https://miot-spec.org/miot-spec-v2/instance?type=${encodeURIComponent(urn)}`, {
+            signal: AbortSignal.timeout(MIOT_SPEC_TIMEOUT_MS),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return normalizeMiotSpec(await response.json() as MiotSpec);
+    })();
+    miotSpecCache.set(urn, pending);
+    pending.catch(() => {
+        if (miotSpecCache.get(urn) === pending) miotSpecCache.delete(urn);
+    });
+    return pending;
+}
+
+/** 清空 MIOT Spec 缓存（测试用） */
+export function clearMiotSpecCache(): void {
+    miotSpecCache.clear();
+}
+
 export async function getDevices(gateway: GatewayClient): Promise<ToolResponse<Device[]>> {
     try {
         const response = await gateway.callApi<DeviceListResponse>('getDevList', {}, 10000);
@@ -178,6 +211,17 @@ export async function getDevice(gateway: GatewayClient, dids: string[]): Promise
         const response = await gateway.callApi<DeviceListResponse>('getDevList', {}, 10000);
         const devList = response.devList || {};
 
+        // 不同 URN 并行拉取，相同 URN 只请求一次
+        const urns = [...new Set(dids.map((did) => devList[did]?.urn).filter((urn): urn is string => Boolean(urn)))];
+        type SpecResult = { spec: ReturnType<typeof normalizeMiotSpec> } | { error: string };
+        const specResults = new Map<string, SpecResult>(await Promise.all(urns.map(async (urn): Promise<[string, SpecResult]> => {
+            try {
+                return [urn, { spec: await fetchMiotSpec(urn) }];
+            } catch (e) {
+                return [urn, { error: e instanceof Error && e.message.startsWith('HTTP ') ? e.message : String(e) }];
+            }
+        })));
+
         const results: DeviceInfo[] = [];
         for (const did of dids) {
             const device = devList[did];
@@ -198,17 +242,9 @@ export async function getDevice(gateway: GatewayClient, dids: string[]): Promise
             };
 
             if (device.urn) {
-                try {
-                    const specUrl = `https://miot-spec.org/miot-spec-v2/instance?type=${encodeURIComponent(device.urn)}`;
-                    const specRes = await fetch(specUrl);
-                    if (specRes.ok) {
-                        Object.assign(info, normalizeMiotSpec(await specRes.json() as MiotSpec));
-                    } else {
-                        info.specError = `HTTP ${specRes.status}`;
-                    }
-                } catch (e) {
-                    info.specError = String(e);
-                }
+                const spec = specResults.get(device.urn);
+                if (spec && 'spec' in spec) Object.assign(info, structuredClone(spec.spec));
+                else if (spec) info.specError = spec.error;
             }
 
             results.push(info);

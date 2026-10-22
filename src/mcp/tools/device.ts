@@ -8,12 +8,18 @@ import type { GatewayManager } from "../../core/gateway/manager.js";
 import { getDevices, getDevice, findDeviceUsage } from "../../core/index.js";
 import {
   ResponseFormatSchema,
-  formatJson,
-  handleError,
+  textResult,
+  jsonResult,
+  errorResult,
   formatDeviceListMarkdown,
   formatDeviceDetailsMarkdown,
+  formatDeviceSummaryMarkdown,
   formatDeviceUsageMarkdown,
+  summarizeDevice,
+  filterDeviceBySiids,
 } from "../utils.js";
+
+const DEVICE_HINT = "可用 siids 只看指定服务，或减少 dids 数量";
 
 export function registerDeviceTools(
   server: McpServer,
@@ -26,14 +32,9 @@ export function registerDeviceTools(
       title: "获取设备列表",
       description: `获取已连接网关下的所有设备列表。
 
-返回设备的基本信息，包括ID、名称、型号、在线状态和房间信息。
-
-Args:
-  - response_format (string, optional): 输出格式，"markdown" 或 "json"，默认 "markdown"
-
-Returns:
-  - devices: 设备列表
-  - count: 设备数量
+Returns（紧凑）：
+  - markdown: 每台设备一行「名称 (did) | 房间 | 型号 | [在线]/[离线]」
+  - json: {count, devices:[{did,name,modelName,online,roomName}]}
 
 Error Handling:
   - "网关未连接" - 请先调用 mijia_auth`,
@@ -51,33 +52,16 @@ Error Handling:
       try {
         gatewayManager.ensureConnected();
         const result = await getDevices(gatewayManager.gateway!);
+        if (!result.success) return errorResult(new Error(result.error), "get_devices");
 
-        if (!result.success) {
-          return {
-            content: [{ type: "text", text: handleError(new Error(result.error), "get_devices") }],
-            isError: true,
-          };
-        }
+        const devices = (result.data ?? []).map(({ did, name, modelName, online, roomName }) => ({ did, name, modelName, online, roomName }));
+        const output = { count: devices.length, devices };
+        const hint = "设备过多，可用 mijia_find_device_usage 的 query 或 mijia_get_device 精确查询";
 
-        const devices = result.data ?? [];
-        const output = { devices, count: devices.length };
-
-        if (response_format === "json") {
-          return {
-            content: [{ type: "text", text: formatJson(output) }],
-            structuredContent: output,
-          };
-        }
-
-        return {
-          content: [{ type: "text", text: formatDeviceListMarkdown(devices, devices.length) }],
-          structuredContent: output,
-        };
+        if (response_format === "json") return jsonResult(output, { hint });
+        return textResult(formatDeviceListMarkdown(devices, devices.length), output, false, { hint });
       } catch (error) {
-        return {
-          content: [{ type: "text", text: handleError(error, "get_devices") }],
-          isError: true,
-        };
+        return errorResult(error, "get_devices");
       }
     }
   );
@@ -89,24 +73,26 @@ Error Handling:
       title: "获取设备详情",
       description: `获取指定设备的详细信息，包括 MIOT Spec 能力定义。
 
-返回完整 MIOT Spec 能力：所有属性的读写订阅权限、类型、单位、枚举取值、数值范围，以及事件参数和动作输入参数。同时返回该设备的完整 URN，构造规则节点的 cfg.urn 时直接使用，不要从型号字符串推导版本号。排查设备映射时优先使用本工具，无需先读取日志。
+默认 detail="summary"：每个属性只出现一次 {siid,piid,desc,dtype,access(r=读 w=写 n=订阅),unit?,range?,values?[{v,d}]}，枚举最多 30 项（超出见 valuesTruncated），另含 events{siid,eiid,desc,args:[piid]} 与 actions{siid,aiid,desc,in:[piid]}。
+detail="full" 返回原始完整对象（含 triggers/actions/readable，体积大）。siids 可只看指定服务。
+返回每个设备完整 urn：构造规则节点时必须原样复制到 cfg.urn，不要从型号字符串推导版本号。排查设备映射时优先使用本工具，无需先读取日志。
 
 Args:
   - dids (string[]): 设备ID数组，支持批量查询
-  - response_format (string, optional): 输出格式，默认 "markdown"
+  - detail ("summary"|"full", optional): 默认 summary
+  - siids (number[], optional): 只返回这些服务的能力
+  - response_format (string, optional): 默认 "markdown"（每个属性一行），json 为紧凑 JSON
 
 Returns:
-  - devices: 设备详情列表
-  - notFound: 网关设备表中不存在的设备ID列表（为空表示全部命中）
-  - 每个设备含 urn: 完整 MIOT URN，规则节点 cfg.urn 必须与之完全一致
-  - 包含 properties(所有字段约束), events(事件及参数), triggers, actions(含输入参数), readable
-  - 每个设备含 found 字段：false 表示该ID在网关设备表中不存在，其余字段为占位空值
+  - devices, count, notFound: 网关设备表中不存在的设备ID列表（为空表示全部命中）
+  - found=false 表示该ID在网关设备表中不存在，不是「设备离线」
 
 Error Handling:
-  - "网关未连接" - 请先调用 mijia_auth
-  - 设备ID不存在时不报错，而是在该设备的 found=false 并列入 notFound；请勿把它当作「设备离线」`,
+  - "网关未连接" - 请先调用 mijia_auth`,
       inputSchema: z.object({
         dids: z.array(z.string()).min(1).describe("设备ID数组"),
+        detail: z.enum(["summary", "full"]).optional().default("summary").describe("summary=精简能力（默认），full=完整原始对象"),
+        siids: z.array(z.number().int()).optional().describe("只返回这些服务 siid 的能力"),
         response_format: ResponseFormatSchema.optional().default("markdown").describe("输出格式"),
       }),
       annotations: {
@@ -116,38 +102,29 @@ Error Handling:
         openWorldHint: true,
       },
     },
-    async ({ dids, response_format = "markdown" }) => {
+    async ({ dids, detail = "summary", siids, response_format = "markdown" }) => {
       try {
         gatewayManager.ensureConnected();
         const result = await getDevice(gatewayManager.gateway!, dids);
+        if (!result.success) return errorResult(new Error(result.error), "get_device");
 
-        if (!result.success) {
-          return {
-            content: [{ type: "text", text: handleError(new Error(result.error), "get_device") }],
-            isError: true,
-          };
+        const raw = result.data ?? [];
+        const notFound = raw.filter((device) => device.found === false).map((device) => device.did);
+
+        if (detail === "full") {
+          const devices = raw.map((device) => filterDeviceBySiids(device, siids));
+          const output = { count: devices.length, notFound, devices };
+          if (response_format === "json") return jsonResult(output, { hint: DEVICE_HINT });
+          return textResult(formatDeviceDetailsMarkdown(devices), output, false, { hint: DEVICE_HINT });
         }
 
-        const devices = result.data ?? [];
-        const notFound = devices.filter((device) => device.found === false).map((device) => device.did);
-        const output = { devices, count: devices.length, notFound };
-
-        if (response_format === "json") {
-          return {
-            content: [{ type: "text", text: formatJson(output) }],
-            structuredContent: output,
-          };
-        }
-
-        return {
-          content: [{ type: "text", text: formatDeviceDetailsMarkdown(devices) }],
-          structuredContent: output,
-        };
+        const devices = raw.map((device) => summarizeDevice(device, siids));
+        const output = { count: devices.length, notFound, devices };
+        if (response_format === "json") return jsonResult(output, { hint: DEVICE_HINT });
+        const text = `${formatDeviceSummaryMarkdown(devices)}${notFound.length > 0 ? `\nnotFound: ${notFound.join(", ")}` : ""}`;
+        return textResult(text, output, false, { hint: DEVICE_HINT });
       } catch (error) {
-        return {
-          content: [{ type: "text", text: handleError(error, "get_device") }],
-          isError: true,
-        };
+        return errorResult(error, "get_device");
       }
     }
   );
@@ -164,7 +141,7 @@ Error Handling:
 Args:
   - dids (string[], optional): 设备ID数组。已从网关删除的设备ID同样可查，用于排查残留引用
   - query (string, optional): 名称/型号/房间/设备ID的模糊匹配，不区分大小写。型号同时匹配 model 串(如 linp-es5b)与中文型号名
-  - response_format (string, optional): 输出格式，默认 "markdown"
+  - response_format (string, optional): 输出格式，默认 "markdown"；json 为紧凑 JSON
   - dids 与 query 至少提供一个；两者同时提供时取并集
 
 Returns:
@@ -195,33 +172,16 @@ Note: 需要逐条拉取规则，规则较多时耗时数秒。`,
       try {
         gatewayManager.ensureConnected();
         const result = await findDeviceUsage(gatewayManager.gateway!, { dids, query });
-
-        if (!result.success) {
-          return {
-            content: [{ type: "text", text: handleError(new Error(result.error), "find_device_usage") }],
-            isError: true,
-          };
-        }
+        if (!result.success) return errorResult(new Error(result.error), "find_device_usage");
 
         const report = result.data ?? { devices: [], orphans: [], scannedGraphs: 0, unreadableGraphs: [] };
         const output = { ...report };
+        const hint = "请用更精确的 dids 或 query 缩小范围";
 
-        if (response_format === "json") {
-          return {
-            content: [{ type: "text", text: formatJson(output) }],
-            structuredContent: output,
-          };
-        }
-
-        return {
-          content: [{ type: "text", text: formatDeviceUsageMarkdown(report) }],
-          structuredContent: output,
-        };
+        if (response_format === "json") return jsonResult(output, { hint });
+        return textResult(formatDeviceUsageMarkdown(report), output, false, { hint });
       } catch (error) {
-        return {
-          content: [{ type: "text", text: handleError(error, "find_device_usage") }],
-          isError: true,
-        };
+        return errorResult(error, "find_device_usage");
       }
     }
   );
