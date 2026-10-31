@@ -22,9 +22,7 @@ import {
   graphHash,
   buildTextContext,
   textToNodes,
-  arrangeNodes,
-  layoutHash,
-  positionChangedIds,
+  checkGraphLayout,
 } from "../../core/index.js";
 import type { Graph, GraphNode } from "../../core/index.js";
 import {
@@ -853,37 +851,9 @@ export function registerGraphTools(
     async ({ id, positions, layout, limit = 30 }) => {
       try {
         gatewayManager.ensureConnected();
-        const loaded = await loadGraph(id);
-        if (!loaded.graph) return errorResult(new Error(loaded.error), "check_layout");
-        let nodes = loaded.graph.nodes;
-        if (positions) {
-          for (const nodeId of Object.keys(positions)) {
-            if (!nodes.some((node) => node.id === nodeId)) return textResult(`Error: positions 中的节点 ${nodeId} 不存在 (check_layout)`, undefined, true);
-          }
-          nodes = nodes.map((node) => positions[node.id]
-            ? { ...node, cfg: { ...node.cfg, pos: { ...((node.cfg as Record<string, unknown>).pos as object || {}), ...positions[node.id] } } }
-            : node);
-        }
-        const arranged = arrangeNodes(nodes, layout);
-        const report = arranged.report;
-        return jsonResult({
-          id,
-          layoutHash: layoutHash(arranged.nodes),
-          nodeCount: report.nodeCount,
-          placed: arranged.placedIds,
-          moved: positionChangedIds(loaded.graph.nodes, arranged.nodes),
-          overlaps: report.overlaps.slice(0, limit),
-          overlapCount: report.overlaps.length,
-          possibleOverlaps: report.possibleOverlaps.slice(0, limit),
-          possibleOverlapCount: report.possibleOverlaps.length,
-          edgesThroughCards: report.edgesThroughCards.slice(0, limit),
-          edgesThroughCardCount: report.edgesThroughCards.length,
-          crossings: report.crossings,
-          backEdges: report.backEdges,
-          regions: report.regions.map((region) => ({ count: region.ids.length, first: region.ids[0], box: region.box })),
-          missingPositions: report.missingPositions,
-          model: report.model,
-        });
+        const result = await checkGraphLayout(gatewayManager.gateway!, id, { positions, layout, limit });
+        if (!result.success) return errorResult(new Error(result.error), "check_layout");
+        return jsonResult({ ...result.data! });
       } catch (error) {
         return errorResult(error, "check_layout");
       }

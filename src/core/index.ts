@@ -13,8 +13,8 @@ export { getDevices, getDevice, fetchMiotSpec, clearMiotSpecCache } from './tool
 export { getGraphs, getGraph, createGraph, updateGraph, deleteGraph, toggleGraph, findDeviceUsage } from './tools/graph';
 export { graphHash, summarizeGraph, applyGraphPatch, patchGraph, validateGraphById } from './tools/graphEdit';
 export type { GraphCompactSummary, GraphNodeSummary, GraphPatch } from './tools/graphEdit';
-export { getGraphText, putGraphText, patchGraphV2, queryRules, getGraphLog, parseGatewayLog, buildTextContext, focusIds, summarizeLayout } from './tools/graphText';
-export type { GraphTextResult, GraphChangeReport, PatchV2Input, RuleQuery, RuleQueryHit, LogQuery } from './tools/graphText';
+export { getGraphText, putGraphText, patchGraphV2, queryRules, getGraphLog, parseGatewayLog, buildTextContext, focusIds, summarizeLayout, checkGraphLayout } from './tools/graphText';
+export type { GraphTextResult, GraphChangeReport, PatchV2Input, RuleQuery, RuleQueryHit, LogQuery, LayoutCheckInput, LayoutCheckResult } from './tools/graphText';
 export { nodesToText, textToNodes, nodeLines, sameNode } from './tools/ruleText';
 export type { RuleTextContext, RuleTextVariable, ParsedRuleText } from './tools/ruleText';
 export { noteToMarkdown, markdownToNoteContents, applyNoteOperations } from './tools/ruleNote';

@@ -6,7 +6,7 @@ import { arrangeNodes, layoutReport } from '../../src/core/tools/layout';
 import { graphHash, layoutHash } from '../../src/core/tools/graphHash';
 import { applyGraphPatch, patchGraph } from '../../src/core/tools/graphEdit';
 import { writeGraphNodes } from '../../src/core/tools/graph';
-import { patchGraphV2 } from '../../src/core/tools/graphText';
+import { checkGraphLayout, patchGraphV2 } from '../../src/core/tools/graphText';
 
 type Pos = { x: number; y: number; width: number; height: number };
 
@@ -115,6 +115,29 @@ test('#29 patchGraphV2 positions 只改位置并返回 moved 与 layoutHash；�
     assert.equal(bad.success, false);
     assert.match(bad.success ? '' : bad.error, /重叠/);
     assert.equal(writes.length, 1);
+});
+
+// ==================== 只读布局检查 ====================
+
+test('checkGraphLayout 只读：预览位置修改报告重叠与 moved，不写入；未知节点拒绝', async () => {
+    const graph = graphOf([
+        source('a', { x: 100, y: 100, width: 528, height: 164 }, ['b.input']),
+        n('b', 'delay', { output: [] }, { x: 800, y: 100, width: 528, height: 164 }),
+    ]);
+    const { gateway, writes } = fakeGateway(graph);
+    const saved = await checkGraphLayout(gateway, graph.id);
+    assert.equal(saved.success, true, saved.success ? '' : saved.error);
+    assert.equal(saved.data!.overlapCount, 0);
+    assert.deepEqual(saved.data!.moved, []);
+    assert.equal(saved.data!.layoutHash, layoutHash(graph.nodes));
+    const preview = await checkGraphLayout(gateway, graph.id, { positions: { b: { x: 150, y: 120 } } });
+    assert.equal(preview.success, true);
+    assert.deepEqual(preview.data!.moved, ['b']);
+    assert.deepEqual(preview.data!.overlaps, [['a', 'b']]);
+    const missing = await checkGraphLayout(gateway, graph.id, { positions: { zz: { x: 0, y: 0 } } });
+    assert.equal(missing.success, false);
+    assert.match(missing.success ? '' : missing.error, /zz/);
+    assert.equal(writes.length, 0);
 });
 
 // ==================== #30 增量避让 ====================

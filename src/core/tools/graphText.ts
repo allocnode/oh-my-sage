@@ -195,6 +195,80 @@ export function summarizeLayout(report: LayoutReport): LayoutSummary {
     };
 }
 
+// ==================== 布局检查 ====================
+
+export interface LayoutCheckInput {
+    /** 预览这些卡片的位置修改 */
+    positions?: Record<string, { x: number; y: number; width?: number; height?: number }>;
+    /** 预览布局方式，如 {mode:'full'} */
+    layout?: LayoutOptions;
+    /** 每类问题最多列出几条，默认 30 */
+    limit?: number;
+}
+
+export interface LayoutCheckResult {
+    id: string;
+    layoutHash: string;
+    nodeCount: number;
+    placed: string[];
+    moved: string[];
+    overlaps: Array<[string, string]>;
+    overlapCount: number;
+    possibleOverlaps: LayoutReport['possibleOverlaps'];
+    possibleOverlapCount: number;
+    edgesThroughCards: LayoutReport['edgesThroughCards'];
+    edgesThroughCardCount: number;
+    crossings: number;
+    backEdges: number;
+    regions: Array<{ count: number; first: string; box: LayoutReport['regions'][number]['box'] }>;
+    missingPositions: LayoutReport['missingPositions'];
+    model: LayoutReport['model'];
+}
+
+/** 只读检查规则卡片布局；可预览位置修改或重排效果，不写入网关 */
+export async function checkGraphLayout(gateway: GatewayClient, id: string, input: LayoutCheckInput = {}): Promise<ToolResponse<LayoutCheckResult>> {
+    try {
+        const current = await getGraph(gateway, id);
+        if (!current.success) return { success: false, error: current.error };
+        const saved = current.data!.nodes || [];
+        const positions = input.positions;
+        let nodes = saved;
+        if (positions) {
+            const missing = Object.keys(positions).filter((nodeId) => !saved.some((node) => node.id === nodeId));
+            if (missing.length > 0) return { success: false, error: `positions 中的节点 ${missing.join(', ')} 不存在` };
+            nodes = saved.map((node) => positions[node.id]
+                ? { ...node, cfg: { ...node.cfg, pos: { ...((node.cfg as Record<string, unknown>).pos as object || {}), ...positions[node.id] } } }
+                : node);
+        }
+        const limit = input.limit ?? 30;
+        const arranged = arrangeNodes(nodes, input.layout);
+        const report = arranged.report;
+        return {
+            success: true,
+            data: {
+                id,
+                layoutHash: layoutHash(arranged.nodes),
+                nodeCount: report.nodeCount,
+                placed: arranged.placedIds,
+                moved: positionChangedIds(saved, arranged.nodes),
+                overlaps: report.overlaps.slice(0, limit),
+                overlapCount: report.overlaps.length,
+                possibleOverlaps: report.possibleOverlaps.slice(0, limit),
+                possibleOverlapCount: report.possibleOverlaps.length,
+                edgesThroughCards: report.edgesThroughCards.slice(0, limit),
+                edgesThroughCardCount: report.edgesThroughCards.length,
+                crossings: report.crossings,
+                backEdges: report.backEdges,
+                regions: report.regions.map((region) => ({ count: region.ids.length, first: region.ids[0], box: region.box })),
+                missingPositions: report.missingPositions,
+                model: report.model,
+            },
+        };
+    } catch (error) {
+        return { success: false, error: `布局检查失败: ${error}` };
+    }
+}
+
 function diffIds(before: GraphNode[], after: GraphNode[]): { added: string[]; changed: string[]; removed: string[] } {
     const old = new Map(before.map((node) => [node.id, node]));
     const now = new Map(after.map((node) => [node.id, node]));

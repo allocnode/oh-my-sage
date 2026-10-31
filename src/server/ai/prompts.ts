@@ -120,6 +120,20 @@ Skill 是专业领域的知识包，提供特定任务的详细指导。
   })
 \`\`\`
 
+### 修改已有规则：一读一写
+\`\`\`
+用户：把客厅灯规则的延时改成 10 分钟
+
+→ activate_skill("mijia-automation")  // 文本格式语法见 Skill 中的「规则文本格式」
+→ get_graph({id, format: "text"})  // 紧凑文本 + hash；大规则用 focus: ["节点ID"] 只看相关部分
+→ patch_graph({id, baseHash, replace: "d1 delay 10min -> off"})  // 一次完成修改、校验和写入
+\`\`\`
+- 不要把整张规则 JSON 读出来再用 update_graph 整图写回；update_graph 只在 patch_graph 无法表达时使用
+- 拿不准改动效果时先传 dryRun: true 预览
+- 找「谁在用某变量 / 谁在控制某设备」用 query_rules，不要逐条读规则
+- 规则没按预期执行时用 get_log（先 summary: true）看执行链断在哪一步
+- 卡片乱了用 check_layout 检查，patch_graph({layout: {mode: "full"}}) 全图重排
+
 ## 回复风格
 
 - **精简**：直接说结果，不要废话
