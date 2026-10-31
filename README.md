@@ -129,7 +129,7 @@ Skill 提供节点类型模板、节点连接规则、关键校验规则、dtype
 
 #### MCP 工具列表
 
-共 31 个工具。`mijia_create_graph`、`mijia_patch_graph`、`mijia_update_graph` 和草稿工具构建节点时需要 `mijia-automation` Skill 支持。读写已有规则推荐使用紧凑文本格式，见 [规则文本格式](docs/rule-text-format.md)。
+共 32 个工具。`mijia_create_graph`、`mijia_patch_graph`、`mijia_update_graph` 和草稿工具构建节点时需要 `mijia-automation` Skill 支持。读写已有规则推荐使用紧凑文本格式，见 [规则文本格式](docs/rule-text-format.md)。
 
 <details>
 <summary><b>展开完整工具列表</b></summary>
@@ -166,7 +166,7 @@ Skill 提供节点类型模板、节点连接规则、关键校验规则、dtype
       <td>一次扫描全部规则，找出引用指定设备的规则和节点，并列出残留引用</td>
     </tr>
     <tr>
-      <td rowspan="12">规则</td>
+      <td rowspan="13">规则</td>
       <td><code>mijia_get_graphs</code></td>
       <td>获取规则列表</td>
     </tr>
@@ -209,6 +209,10 @@ Skill 提供节点类型模板、节点连接规则、关键校验规则、dtype
     <tr>
       <td><code>mijia_validate_graph</code></td>
       <td>校验结构完整性（可传已保存规则的 <code>id</code>）</td>
+    </tr>
+    <tr>
+      <td><code>mijia_check_layout</code></td>
+      <td>只读检查卡片布局：重叠、可能重叠、穿卡连线和交叉估计；可预览挪动或重排的效果</td>
     </tr>
     <tr>
       <td><code>mijia_validate_graph_capabilities</code></td>

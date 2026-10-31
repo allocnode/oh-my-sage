@@ -97,10 +97,11 @@ video → ui-sample → graph-diff → local-tested → gateway-roundtrip → ru
 }
 ```
 
-**节点位置自动布局**：create_graph 会根据节点连接关系自动计算位置，无需手动设置 `cfg.pos`。布局规则：
-- 从左到右表示流程方向
-- 分支节点上下排列
-- 节点尺寸：528×164
+**节点位置自动布局**：创建和修改时不需要手动设置 `cfg.pos`。
+- 新规则按连接关系分层排版：主流程从左到右，并列分支上下排列，长连线留出通道，自动减少连线交叉；回路允许向左回连；互不相连的部分作为独立分区上下排列；备注放在流程上方。
+- 修改已有规则时，已有卡片位置不动，只给新卡片找空位：靠近上下游、不与任何卡片重叠、尽量不压连线。
+- 卡片尺寸优先用网关保存的宽高（原生画布测量值），缺失时按 528×164 估算；检查重叠时按设备卡片原生可能的最大尺寸留出余量。
+- 写入前对全部卡片做碰撞复检：本次摆放或移动的卡片与任何卡片重叠时拒绝写入。
 
 ## 关键校验规则
 
@@ -207,11 +208,14 @@ MCP 模式下**创建**超过 10 个节点的复杂规则时，不要调用两�
    - `merge`：只改个别字段或连线（`outputs` 按端口整体替换），`removeIds`：删除节点并清理连线。
    - `note`：`{section, append}`、`{replace, with}`、`{changelog}` 修改备注，不用手工拼富文本，高度自动调整。
    - `variables`：需要的变量，不存在才创建，写入失败自动删除。
-   - `baseHash` 必传；`dryRun:true` 只预览。
-4. **不必再单独校验和回读**：写入前已做结构与设备能力两项校验，写入后已回读；返回值里的 `diff` 就是改动节点写入后的文本。
-5. **改动很大**：用 `scripts/rules.mjs pull` 把规则拉成本地文件，用普通文件编辑只改需要的行，再 `push`（服务端为 `mijia_put_graph_text`）。
-6. **看执行情况**：`mijia_get_log {graph, minutes}`；先用 `summary:true` 看各节点执行次数，找出执行链断在哪一步。
-7. `mijia_update_graph` 是整图替换，仅兼容保留。Web Agent 没有这些工具，继续使用 update_graph。
+   - `positions`：`{节点ID: {x, y}}` 只挪卡片；只挪位置也会保存。
+   - `layout`：默认只给新卡片找空位；整理乱掉的规则用 `{mode:"full"}` 全图重排，`pinned` 指定不动的卡片。
+   - `baseHash` 必传；挪卡片或重排时同时传 `baseLayoutHash`（读取时返回的 `layoutHash`），防止覆盖别人在 App 里挪过的位置。`dryRun:true` 只预览。
+4. **不必再单独校验和回读**：写入前已做结构与设备能力两项校验；返回值里的 `diff` 就是改动节点写入后的文本。
+5. **交付前看布局**：返回值的 `layout` 列出重叠、可能重叠、穿卡连线数和交叉估计；需要确认坐标确实存进网关时传 `verifyLayout:true`（多一次网关往返），结果在 `savedPositionsVerified`。有问题先修再交付，修不了就如实报告。也可随时用只读的 `mijia_check_layout {id}` 检查，或带上 `positions` / `layout` 预览效果。穿卡和交叉是估计值，不代表原生网页实际显示，只用来判断是否好维护。保存会整条重写规则，网关可能重新加载规则，进行中的延时不保证延续，挪卡片也一样。
+6. **改动很大**：用 `scripts/rules.mjs pull` 把规则拉成本地文件，用普通文件编辑只改需要的行，再 `push`（服务端为 `mijia_put_graph_text`）。
+7. **看执行情况**：`mijia_get_log {graph, minutes}`；先用 `summary:true` 看各节点执行次数，找出执行链断在哪一步。
+8. `mijia_update_graph` 是整图替换，仅兼容保留。Web Agent 没有这些工具，继续使用 update_graph。
 
 **⚠️ create_graph / patch_graph / put_graph_text / update_graph 内置了校验逻辑。如果节点连接有 error 级别的问题，工具会返回错误并拒绝调用 setGraph。修复后重新调用即可。**
 

@@ -12,7 +12,9 @@ import type { ToolResponse, Variable } from '../types';
 import { validateGraph } from './base';
 import { fetchMiotSpec } from './device';
 import { getGraph, writeGraphNodes } from './graph';
-import { applyGraphPatch, graphHash, type GraphPatch } from './graphEdit';
+import { applyGraphPatch, type GraphPatch } from './graphEdit';
+import { graphHash, layoutHash, positionChangedIds, positionKey } from './graphHash';
+import { arrangeNodes, type LayoutOptions, type LayoutReport } from './layout';
 import { applyNoteOperations, markdownToNoteContents, noteHeight, noteToMarkdown, type NoteOperation } from './ruleNote';
 import { collectDeviceTokens, nodeLines, nodesToText, sameNode, textToNodes, type RuleTextContext, type RuleTextVariable } from './ruleText';
 import { getDeviceList, getDeviceListFor, invalidateGraph, scanGraphs } from './gatewayCache';
@@ -68,6 +70,8 @@ export interface GraphTextResult {
     name: string;
     enable: boolean;
     hash: string;
+    /** 卡片坐标哈希；只改位置时传给 baseLayoutHash */
+    layoutHash: string;
     nodeCount: number;
     text: string;
 }
@@ -131,6 +135,7 @@ export async function getGraphText(
                 name: graph.cfg?.userData?.name || id,
                 enable: graph.cfg?.enable ?? false,
                 hash: graphHash(nodes),
+                layoutHash: layoutHash(nodes),
                 nodeCount: nodes.length,
                 text,
                 ...(missingIds && missingIds.length > 0 ? { missingIds } : {}),
@@ -146,17 +151,48 @@ export async function getGraphText(
 export interface GraphChangeReport {
     graphId: string;
     hash: string;
+    /** 只反映卡片坐标与尺寸的哈希，挪动卡片时传给 baseLayoutHash */
+    layoutHash: string;
     nodeCount: number;
     added: string[];
     changed: string[];
     removed: string[];
+    /** 已有节点中坐标或尺寸变化的节点（含本次自动避让移动的） */
+    moved: string[];
+    /** 本次由布局引擎摆放的节点 */
+    placed: string[];
     noteChanged: boolean;
     createdVariables: string[];
     /** 改动节点的文本（删除的节点不在其中） */
     diff: string;
+    /** 写入后的布局检查：重叠、可能重叠、穿卡连线、交叉估计（估计值，未经原生网页验证） */
+    layout?: LayoutSummary;
     /** 写入后的完整文本，仅 put 返回 */
     text?: string;
     message: string;
+}
+
+/** 布局检查摘要：只列有问题的条目，避免把整份报告传回对话 */
+export interface LayoutSummary {
+    overlaps: Array<[string, string]>;
+    possibleOverlaps: number;
+    edgesThroughCards: number;
+    crossings: number;
+    regions: number;
+    /** verifyLayout=true 时回读确认网关保存的坐标与写入一致；不代表原生网页显示已验证 */
+    savedPositionsVerified?: boolean;
+    note: string;
+}
+
+export function summarizeLayout(report: LayoutReport): LayoutSummary {
+    return {
+        overlaps: report.overlaps.slice(0, 20),
+        possibleOverlaps: report.possibleOverlaps.length,
+        edgesThroughCards: report.edgesThroughCards.length,
+        crossings: report.crossings,
+        regions: report.regions.length,
+        note: '穿卡与交叉为估计值；保存会整条重写规则，规则可能重新加载，进行中的延时不保证延续',
+    };
 }
 
 function diffIds(before: GraphNode[], after: GraphNode[]): { added: string[]; changed: string[]; removed: string[] } {
@@ -265,32 +301,43 @@ function changeText(before: GraphNode[], after: GraphNode[], ids: string[], ctx:
 }
 
 /**
- * 统一的写入事务：校验 → 建变量 → 写入（含能力校验）→ 回读。失败时删除本次新建的变量。
- * 返回改动明细（文本形式）和写入后的 hash。
+ * 统一的写入事务：保留坐标 → 布局（只摆放没有坐标的卡片，或按 layout.mode=full 重排）→ 校验 → 建变量 → 写入（含能力校验）。
+ * 失败时删除本次新建的变量。逻辑变化和位置变化分开统计，只改位置也会写入。
  */
 async function commitNodes(
     gateway: GatewayClient,
     existing: Graph,
     nextNodes: GraphNode[],
     variables: RuleTextVariable[],
-    options: { dryRun?: boolean; returnText?: boolean; ctx: RuleTextContext }
+    options: { dryRun?: boolean; returnText?: boolean; ctx: RuleTextContext; layout?: LayoutOptions; verifyLayout?: boolean }
 ): Promise<ToolResponse<GraphChangeReport>> {
     const id = existing.id;
     const before = existing.nodes || [];
-    const nodes = carryPositions(before, nextNodes);
+    const arranged = arrangeNodes(carryPositions(before, nextNodes), options.layout);
+    const nodes = arranged.nodes;
     const { added, changed, removed } = diffIds(before, nodes);
+    const moved = positionChangedIds(before, nodes);
     const noteChanged = [...added, ...changed, ...removed].some((nodeId) => (nodes.find((node) => node.id === nodeId) || before.find((node) => node.id === nodeId))?.type === 'nop');
     const diff = changeText(before, nodes, [...added, ...changed], options.ctx);
-    const base = { graphId: id, added, changed, removed, noteChanged, diff };
+    const base = { graphId: id, added, changed, removed, moved, placed: arranged.placedIds, noteChanged, diff };
 
     const errors = structuralErrors(id, nodes);
     if (errors.length > 0) return { success: false, error: `规则校验失败（${errors.length} 个错误）：${formatErrors(errors)}` };
 
-    if (added.length + changed.length + removed.length === 0 && variables.length === 0) {
-        return { success: true, data: { ...base, hash: graphHash(before), nodeCount: before.length, createdVariables: [], message: '无变化', ...(options.returnText ? { text: nodesToText(before, options.ctx) } : {}) }, message: '无变化' };
+    // 本次摆放或移动的卡片不允许与任何卡片重叠；原有卡片之间的重叠属于既有布局，只报告
+    const touched = new Set([...arranged.placedIds, ...moved]);
+    const newOverlaps = arranged.report.overlaps.filter(([a, b]) => touched.has(a) || touched.has(b));
+    if (newOverlaps.length > 0) {
+        return { success: false, error: `卡片重叠：${newOverlaps.slice(0, 10).map(([a, b]) => `${a}↔${b}`).join('，')}；请调整坐标，或用 layout.mode="full" 重排` };
+    }
+    const layout = summarizeLayout(arranged.report);
+
+    const logicChanged = added.length + changed.length + removed.length > 0;
+    if (!logicChanged && moved.length === 0 && variables.length === 0) {
+        return { success: true, data: { ...base, hash: graphHash(before), layoutHash: layoutHash(before), nodeCount: before.length, createdVariables: [], message: '无变化', ...(options.returnText ? { text: nodesToText(before, options.ctx) } : {}) }, message: '无变化' };
     }
     if (options.dryRun) {
-        return { success: true, data: { ...base, hash: graphHash(before), nodeCount: nodes.length, createdVariables: [], message: '预览，未写入' }, message: '预览，未写入' };
+        return { success: true, data: { ...base, hash: graphHash(nodes), layoutHash: layoutHash(nodes), nodeCount: nodes.length, createdVariables: [], layout, message: '预览，未写入' }, message: '预览，未写入' };
     }
 
     const ensured = await ensureVariables(gateway, variables);
@@ -298,9 +345,8 @@ async function commitNodes(
         const failures = await rollbackVariables(gateway, ensured.created);
         return { success: false, error: `${ensured.error}${failures.length ? `；回滚失败: ${failures.join('，')}` : ''}` };
     }
-    const nodesChanged = added.length + changed.length + removed.length > 0;
     let finalNodes = before;
-    if (nodesChanged) {
+    if (logicChanged || moved.length > 0) {
         const written = await writeGraphNodes(gateway, id, existing, { nodes });
         if (!written.success) {
             const failures = await rollbackVariables(gateway, ensured.created);
@@ -310,15 +356,29 @@ async function commitNodes(
         finalNodes = written.data?.nodes || nodes;
     }
     invalidateGraph(gateway, id);
+    // verifyLayout=true 时回读一次，确认网关保存的坐标与写入一致（多一次网关往返，默认不做；写入成功即已保存）
+    let layoutVerified: boolean | undefined;
+    if (options.verifyLayout && touched.size > 0 && (logicChanged || moved.length > 0)) {
+        const reread = await getGraph(gateway, id);
+        if (reread.success) {
+            const saved = new Map((reread.data!.nodes || []).map((node) => [node.id, positionKey(node)]));
+            layoutVerified = finalNodes.filter((node) => touched.has(node.id)).every((node) => saved.get(node.id) === positionKey(node));
+        }
+    }
     const created = ensured.created.map((variable) => `${variable.scope}/${variable.id}`);
-    const message = `规则 ${id} 已更新：新增 ${added.length}，修改 ${changed.length}，删除 ${removed.length}${created.length ? `，新建变量 ${created.length}` : ''}`;
+    const parts = [`新增 ${added.length}`, `修改 ${changed.length}`, `删除 ${removed.length}`];
+    if (moved.length) parts.push(`移动 ${moved.length}`);
+    if (created.length) parts.push(`新建变量 ${created.length}`);
+    const message = `规则 ${id} 已更新：${parts.join('，')}`;
     return {
         success: true,
         data: {
             ...base,
             hash: graphHash(finalNodes),
+            layoutHash: layoutHash(finalNodes),
             nodeCount: finalNodes.length,
             createdVariables: created,
+            layout: layoutVerified === undefined ? layout : { ...layout, savedPositionsVerified: layoutVerified },
             message,
             ...(options.returnText ? { text: nodesToText(finalNodes, options.ctx) } : {}),
         },
@@ -326,23 +386,30 @@ async function commitNodes(
     };
 }
 
+/** 读取时的并发检查：逻辑 hash 与布局 hash */
+function staleError(existing: Graph, input: { baseHash?: string; baseLayoutHash?: string }): string | null {
+    const currentHash = graphHash(existing.nodes);
+    if (input.baseHash !== undefined && input.baseHash !== currentHash) return `规则已被修改（hash 不一致），请重新读取后再改；当前 hash=${currentHash}`;
+    const currentLayout = layoutHash(existing.nodes);
+    if (input.baseLayoutHash !== undefined && input.baseLayoutHash !== currentLayout) return `卡片位置已被修改（layoutHash 不一致），请重新读取后再改；当前 layoutHash=${currentLayout}`;
+    return null;
+}
+
 /** 用一份完整的紧凑文本替换规则（规则文件 push 的服务端实现） */
 export async function putGraphText(
     gateway: GatewayClient,
     id: string,
-    input: { text: string; baseHash?: string; dryRun?: boolean }
+    input: { text: string; baseHash?: string; baseLayoutHash?: string; dryRun?: boolean; layout?: LayoutOptions; verifyLayout?: boolean }
 ): Promise<ToolResponse<GraphChangeReport>> {
     try {
         const loaded = await loadGraphAndDevices(gateway, id);
         if (!loaded.graph) return { success: false, error: loaded.error! };
         const existing = loaded.graph;
-        const currentHash = graphHash(existing.nodes);
-        if (input.baseHash !== undefined && input.baseHash !== currentHash) {
-            return { success: false, error: `规则已被修改（hash 不一致），请重新拉取后再改；当前 hash=${currentHash}` };
-        }
+        const stale = staleError(existing, input);
+        if (stale) return { success: false, error: stale };
         const ctx = await buildTextContext(gateway, id, existing.nodes, input.text, await devListFor(gateway, loaded.devList, existing.nodes, input.text));
         const parsed = textToNodes(input.text, ctx);
-        return await commitNodes(gateway, existing, parsed.nodes, parsed.variables, { dryRun: input.dryRun, returnText: true, ctx });
+        return await commitNodes(gateway, existing, parsed.nodes, parsed.variables, { dryRun: input.dryRun, returnText: true, ctx, layout: input.layout, verifyLayout: input.verifyLayout });
     } catch (error) {
         return { success: false, error: `写入规则文本失败: ${error instanceof Error ? error.message : error}` };
     }
@@ -350,6 +417,8 @@ export async function putGraphText(
 
 export interface PatchV2Input extends GraphPatch {
     baseHash?: string;
+    /** 读取时的 layoutHash；卡片位置在此期间被别人挪动过时拒绝写入 */
+    baseLayoutHash?: string;
     /** 新增节点（紧凑文本，可含宏与 var 声明）；ID 已存在时拒绝 */
     add?: string;
     /** 整行替换已有节点（紧凑文本）；ID 不存在时拒绝 */
@@ -359,22 +428,47 @@ export interface PatchV2Input extends GraphPatch {
     noteId?: string;
     /** 需要创建的变量（已存在且类型一致时跳过） */
     variables?: RuleTextVariable[];
+    /** 只改卡片位置：{节点ID: {x, y, width?, height?}}，只允许改这几个字段 */
+    positions?: Record<string, { x: number; y: number; width?: number; height?: number }>;
+    /** 布局方式：默认只摆放没有坐标的卡片；mode=full 全图重排（pinned 不动） */
+    layout?: LayoutOptions;
+    /** 写入后回读确认坐标（多一次网关往返） */
+    verifyLayout?: boolean;
     dryRun?: boolean;
 }
 
+/** 应用位置修改：只改 cfg.pos 的 x/y/width/height */
+function applyPositions(nodes: GraphNode[], positions: PatchV2Input['positions']): { nodes: GraphNode[]; error?: string } {
+    if (!positions) return { nodes };
+    const known = new Set(nodes.map((node) => node.id));
+    for (const [nodeId, pos] of Object.entries(positions)) {
+        if (!known.has(nodeId)) return { nodes, error: `positions 中的节点 ${nodeId} 不存在` };
+        const values = [pos.x, pos.y, pos.width, pos.height].filter((value) => value !== undefined);
+        if (!values.every((value) => typeof value === 'number' && Number.isFinite(value))) return { nodes, error: `节点 ${nodeId} 的坐标必须是数字` };
+        if ((pos.width !== undefined && pos.width <= 0) || (pos.height !== undefined && pos.height <= 0)) return { nodes, error: `节点 ${nodeId} 的宽高必须大于 0` };
+    }
+    return {
+        nodes: nodes.map((node) => {
+            const pos = positions[node.id];
+            if (!pos) return node;
+            const previous = ((node.cfg as Record<string, unknown>)?.pos || {}) as Record<string, unknown>;
+            const next = { ...previous, x: pos.x, y: pos.y, ...(pos.width !== undefined ? { width: pos.width } : {}), ...(pos.height !== undefined ? { height: pos.height } : {}) };
+            return { ...node, cfg: { ...node.cfg, pos: next } };
+        }),
+    };
+}
+
 /**
- * 增强版增量修改：在原 upsert/merge/removeIds 之外，支持文本新增与替换、备注操作和变量声明，
- * 一次完成校验、建变量、写入和回读。
+ * 增强版增量修改：在原 upsert/merge/removeIds 之外，支持文本新增与替换、备注操作、变量声明和卡片位置修改，
+ * 一次完成校验、建变量、布局和写入。
  */
 export async function patchGraphV2(gateway: GatewayClient, id: string, input: PatchV2Input): Promise<ToolResponse<GraphChangeReport>> {
     try {
         const loaded = await loadGraphAndDevices(gateway, id);
         if (!loaded.graph) return { success: false, error: loaded.error! };
         const existing = loaded.graph;
-        const currentHash = graphHash(existing.nodes);
-        if (input.baseHash !== undefined && input.baseHash !== currentHash) {
-            return { success: false, error: `规则已被修改（hash 不一致），请重新读取后再改；当前 hash=${currentHash}` };
-        }
+        const stale = staleError(existing, input);
+        if (stale) return { success: false, error: stale };
         const batchText = [input.add, input.replace].filter(Boolean).join('\n');
         const ctx = await buildTextContext(gateway, id, existing.nodes, batchText, await devListFor(gateway, loaded.devList, existing.nodes, batchText));
         const known = new Set(existing.nodes.map((node) => node.id));
@@ -412,7 +506,11 @@ export async function patchGraphV2(gateway: GatewayClient, id: string, input: Pa
             }
         }
 
-        return await commitNodes(gateway, existing, nodes, variables, { dryRun: input.dryRun, ctx });
+        const positioned = applyPositions(nodes, input.positions);
+        if (positioned.error) return { success: false, error: positioned.error };
+        nodes = positioned.nodes;
+
+        return await commitNodes(gateway, existing, nodes, variables, { dryRun: input.dryRun, ctx, layout: input.layout, verifyLayout: input.verifyLayout });
     } catch (error) {
         return { success: false, error: `修改规则失败: ${error instanceof Error ? error.message : error}` };
     }

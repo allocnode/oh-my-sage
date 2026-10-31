@@ -6,7 +6,8 @@ import { GatewayClient } from '../gateway/client';
 import { randomInt } from 'node:crypto';
 import type { Graph, GraphNode, GraphSummary, CreateGraphInput, UpdateGraphInput, ValidationError, DeviceUsageNode, DeviceUsageReport, DeviceUsage } from '../types/graph';
 import type { ToolResponse } from '../types';
-import { validateGraph, layoutNodes } from './base';
+import { validateGraph } from './base';
+import { arrangeNodes, type LayoutMode, type LayoutReport } from './layout';
 import { validateGraphCapabilitiesWithGateway } from './capabilityValidation';
 import { getDeviceList, invalidateGraph, scanGraphs } from './gatewayCache';
 
@@ -137,7 +138,7 @@ export async function createGraph(gateway: GatewayClient, input: CreateGraphInpu
             props: replaceRuleScope(node.props || {}, variableScope) as Record<string, unknown>,
         }));
 
-        layoutNodes(processedNodes);
+        processedNodes.splice(0, processedNodes.length, ...arrangeNodes(processedNodes).nodes as typeof processedNodes);
 
         const graph = {
             id: graphId,
@@ -273,8 +274,8 @@ export async function writeGraphNodes(
     gateway: GatewayClient,
     id: string,
     existing: Graph,
-    input: UpdateGraphInput & { graphInfo?: GraphListInfo | null }
-): Promise<ToolResponse<{ nodes: GraphNode[] }>> {
+    input: UpdateGraphInput & { graphInfo?: GraphListInfo | null; layout?: { mode?: LayoutMode; pinned?: string[] } }
+): Promise<ToolResponse<{ nodes: GraphNode[]; placedIds: string[]; layout?: LayoutReport }>> {
     try {
         const graphInfo: GraphListInfo | null | undefined = 'graphInfo' in input
             ? input.graphInfo
@@ -291,20 +292,29 @@ export async function writeGraphNodes(
             props: node.props || {},
         }));
 
+        let layout: LayoutReport | undefined;
+        let placedIds: string[] = [];
         if (input.nodes) {
-            const existingPositions = new Map(existing.nodes.flatMap((node) => {
+            // 已有卡片的坐标：调用方给出的优先，否则沿用网关上的；再交给布局引擎只摆放没有坐标的卡片
+            const existingPos = new Map(existing.nodes.flatMap((node) => {
                 const pos = (node.cfg as Record<string, unknown>)?.pos;
                 return pos && typeof pos === 'object' ? [[node.id, pos] as const] : [];
             }));
-            const positions = new Map(processedNodes.flatMap((node) => {
-                const pos = (node.cfg as Record<string, unknown>)?.pos;
-                const preserved = pos && typeof pos === 'object' ? pos : existingPositions.get(node.id);
-                return preserved ? [[node.id, preserved] as const] : [];
-            }));
-            layoutNodes(processedNodes);
             for (const node of processedNodes) {
-                const pos = positions.get(node.id);
-                if (pos) (node.cfg as Record<string, unknown>).pos = pos;
+                const cfg = node.cfg as Record<string, unknown>;
+                if ((!cfg.pos || typeof cfg.pos !== 'object') && existingPos.has(node.id)) cfg.pos = existingPos.get(node.id);
+            }
+            const arranged = input.layout?.mode === 'full'
+                ? arrangeNodes(processedNodes, { mode: 'full', pinned: input.layout.pinned })
+                : arrangeNodes(processedNodes);
+            processedNodes.splice(0, processedNodes.length, ...arranged.nodes as typeof processedNodes);
+            placedIds = arranged.placedIds;
+            layout = arranged.report;
+            // 碰撞复检：本次摆放的卡片不允许与任何卡片重叠（原有卡片之间的重叠属于既有布局，只报告不拦截）
+            const placed = new Set(placedIds);
+            const newOverlaps = layout.overlaps.filter(([a, b]) => placed.has(a) || placed.has(b));
+            if (newOverlaps.length > 0) {
+                return { success: false, error: `布局失败：新摆放的卡片与已有卡片重叠：${newOverlaps.slice(0, 10).map(([a, b]) => `${a}↔${b}`).join('，')}` };
             }
         }
 
@@ -337,7 +347,7 @@ export async function writeGraphNodes(
         await gateway.callApi('setGraph', graph, 10000);
         invalidateGraph(gateway, id);
 
-        return { success: true, message: `规则 ${id} 更新成功`, data: { nodes: graph.nodes } };
+        return { success: true, message: `规则 ${id} 更新成功`, data: { nodes: graph.nodes, placedIds, ...(layout ? { layout } : {}) } };
     } catch (error) {
         return { success: false, error: `更新规则失败: ${error}` };
     }

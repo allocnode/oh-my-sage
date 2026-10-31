@@ -3,39 +3,16 @@
  * 规则哈希、紧凑摘要、节点级补丁，避免每次修改都整图重传
  */
 
-import { createHash } from 'node:crypto';
 import { GatewayClient } from '../gateway/client';
 import type { Graph, GraphNode, ValidationError } from '../types/graph';
 import type { ToolResponse } from '../types';
 import { validateGraph } from './base';
 import { validateGraphCapabilitiesWithGateway, type CapabilityValidationReport } from './capabilityValidation';
 import { getGraph, writeGraphNodes } from './graph';
+import { canonicalNode, graphHash, layoutHash, positionChangedIds } from './graphHash';
 
-// ==================== 规则哈希 ====================
-
-/** 递归排序对象键，数组保持原顺序 */
-function canonicalize(value: unknown): unknown {
-    if (Array.isArray(value)) return value.map(canonicalize);
-    if (!value || typeof value !== 'object') return value;
-    const record = value as Record<string, unknown>;
-    return Object.fromEntries(Object.keys(record).sort().map((key) => [key, canonicalize(record[key])]));
-}
-
-/** 去掉 cfg.pos（卡片坐标不影响规则语义） */
-function withoutPos(node: GraphNode): unknown {
-    const { pos: _pos, ...cfg } = (node.cfg || {}) as Record<string, unknown>;
-    return { ...node, cfg };
-}
-
-function canonicalNode(node: GraphNode): string {
-    return JSON.stringify(canonicalize(withoutPos(node)));
-}
-
-/** 规则内容哈希：忽略坐标与对象键顺序，节点顺序参与计算；取 sha256 前 16 位 */
-export function graphHash(nodes: GraphNode[]): string {
-    const canonical = JSON.stringify(canonicalize((nodes || []).map(withoutPos)));
-    return createHash('sha256').update(canonical).digest('hex').slice(0, 16);
-}
+// 规则哈希见 graphHash.ts；此处重新导出保持兼容
+export { graphHash, layoutHash } from './graphHash';
 
 // ==================== 规则摘要 ====================
 
@@ -167,11 +144,11 @@ function targetNodeId(target: string): string {
 /**
  * 应用节点补丁（纯函数，不修改入参）。
  * 顺序：先删除并清理指向被删节点的连线，再 upsert，最后 merge。
- * changedIds 只包含内容实际发生变化（忽略坐标）的节点。
+ * changedIds 只包含逻辑内容实际变化（忽略坐标）的节点；layoutChangedIds 为已有节点中坐标或尺寸变化的节点。
  */
-export function applyGraphPatch(nodes: GraphNode[], patch: GraphPatch): { nodes: GraphNode[]; changedIds: string[]; error?: string } {
+export function applyGraphPatch(nodes: GraphNode[], patch: GraphPatch): { nodes: GraphNode[]; changedIds: string[]; layoutChangedIds: string[]; error?: string } {
     const original = nodes || [];
-    const fail = (error: string) => ({ nodes: structuredClone(original), changedIds: [], error });
+    const fail = (error: string) => ({ nodes: structuredClone(original), changedIds: [], layoutChangedIds: [], error });
 
     // 同一 ID 只能出现一次
     const seen = new Set<string>();
@@ -230,19 +207,27 @@ export function applyGraphPatch(nodes: GraphNode[], patch: GraphPatch): { nodes:
         if (!node) return fail(`要合并的节点 ${entry.id} 不存在`);
         const change = structuredClone(entry);
         if (change.props) node.props = shallowMerge(node.props, change.props);
-        if (change.cfg) node.cfg = shallowMerge(node.cfg, change.cfg);
+        if (change.cfg) {
+            // cfg.pos 按字段合并：只给 x/y 时保留原宽高
+            const previousPos = (node.cfg as Record<string, unknown> | undefined)?.pos;
+            const nextPos = change.cfg.pos;
+            if (nextPos && typeof nextPos === 'object' && previousPos && typeof previousPos === 'object') {
+                change.cfg.pos = { ...(previousPos as Record<string, unknown>), ...(nextPos as Record<string, unknown>) };
+            }
+            node.cfg = shallowMerge(node.cfg, change.cfg);
+        }
         if (change.inputs) node.inputs = shallowMerge(node.inputs, change.inputs);
         if (change.outputs) node.outputs = { ...(node.outputs || {}), ...change.outputs };
     }
 
-    // 计算实际变化的节点
+    // 计算实际变化的节点：逻辑变化（忽略坐标）与位置变化分开统计
     const before = new Map(original.map((node) => [node.id, canonicalNode(node)]));
     const after = new Map(result.map((node) => [node.id, canonicalNode(node)]));
     const changed = new Set<string>();
     for (const [id, value] of before) if (after.get(id) !== value) changed.add(id);
     for (const id of after.keys()) if (!before.has(id)) changed.add(id);
 
-    return { nodes: result, changedIds: [...changed].sort() };
+    return { nodes: result, changedIds: [...changed].sort(), layoutChangedIds: positionChangedIds(original, result) };
 }
 
 /** 与 updateGraph 一致的节点规范化（补 cfg.name / cfg.version / props），保证返回的 hash 与写入内容一致 */
@@ -260,21 +245,26 @@ function normalizeForWrite(nodes: GraphNode[]): GraphNode[] {
 
 /**
  * 按节点补丁修改规则。只调用一次 getGraph（cfg 缺失时 getGraph 会补读 getGraphList）、只写一次；
- * 可选 baseHash 防止覆盖读取前的他人修改。网关没有条件写入接口，读取与写入之间的并发修改仍可能被覆盖。
+ * 可选 baseHash 防止覆盖读取前的他人逻辑修改，baseLayoutHash 防止覆盖他人挪动的卡片位置。
+ * 只改坐标也会写入。网关没有条件写入接口，读取与写入之间的并发修改仍可能被覆盖。
  */
 export async function patchGraph(
     gateway: GatewayClient,
     id: string,
-    input: GraphPatch & { baseHash?: string; name?: string; enable?: boolean }
-): Promise<ToolResponse<{ graphId: string; hash: string; changedIds: string[]; nodeCount: number }>> {
+    input: GraphPatch & { baseHash?: string; baseLayoutHash?: string; name?: string; enable?: boolean }
+): Promise<ToolResponse<{ graphId: string; hash: string; layoutHash: string; changedIds: string[]; layoutChangedIds: string[]; nodeCount: number }>> {
     try {
         const current = await getGraph(gateway, id);
         if (!current.success) return current;
         const existing = current.data!;
         const existingNodes = existing.nodes || [];
         const currentHash = graphHash(existingNodes);
+        const currentLayout = layoutHash(existingNodes);
         if (input.baseHash !== undefined && input.baseHash !== currentHash) {
             return { success: false, error: `规则已被修改（hash 不一致），请重新读取后再改；当前 hash=${currentHash}` };
+        }
+        if (input.baseLayoutHash !== undefined && input.baseLayoutHash !== currentLayout) {
+            return { success: false, error: `卡片位置已被修改（layoutHash 不一致），请重新读取后再改；当前 layoutHash=${currentLayout}` };
         }
 
         const patched = applyGraphPatch(existingNodes, input);
@@ -282,11 +272,11 @@ export async function patchGraph(
 
         const nameChanged = input.name !== undefined && input.name !== existing.cfg?.userData?.name;
         const enableChanged = input.enable !== undefined && input.enable !== existing.cfg?.enable;
-        const nodesChanged = patched.changedIds.length > 0;
+        const nodesChanged = patched.changedIds.length > 0 || patched.layoutChangedIds.length > 0;
         if (!nodesChanged && !nameChanged && !enableChanged) {
             return {
                 success: true,
-                data: { graphId: id, hash: currentHash, changedIds: [], nodeCount: existingNodes.length },
+                data: { graphId: id, hash: currentHash, layoutHash: currentLayout, changedIds: [], layoutChangedIds: [], nodeCount: existingNodes.length },
                 message: '无变化',
             };
         }
@@ -299,11 +289,18 @@ export async function patchGraph(
         });
         if (!updated.success) return updated;
 
-        const finalNodes = nodesToWrite || existingNodes;
+        const finalNodes = updated.data?.nodes || nodesToWrite || existingNodes;
         return {
             success: true,
-            data: { graphId: id, hash: graphHash(finalNodes), changedIds: patched.changedIds, nodeCount: finalNodes.length },
-            message: `规则 ${id} 已更新（${patched.changedIds.length} 个节点变化）`,
+            data: {
+                graphId: id,
+                hash: graphHash(finalNodes),
+                layoutHash: layoutHash(finalNodes),
+                changedIds: patched.changedIds,
+                layoutChangedIds: positionChangedIds(existingNodes, finalNodes),
+                nodeCount: finalNodes.length,
+            },
+            message: `规则 ${id} 已更新（逻辑变化 ${patched.changedIds.length} 个节点，位置变化 ${patched.layoutChangedIds.length} 个节点）`,
         };
     } catch (error) {
         return { success: false, error: `修改规则失败: ${error}` };
