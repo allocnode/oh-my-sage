@@ -14,7 +14,14 @@ import {
   toggleGraph,
   validateGraph,
   validateGraphCapabilitiesWithGateway,
-  patchGraph,
+  getGraphText,
+  putGraphText,
+  patchGraphV2,
+  queryRules,
+  getGraphLog,
+  graphHash,
+  buildTextContext,
+  textToNodes,
 } from "../../core/index.js";
 import type { Graph, GraphNode } from "../../core/index.js";
 import {
@@ -184,14 +191,20 @@ export function registerGraphTools(
     "mijia_get_graph",
     {
       title: "获取规则详情",
-      description: `获取指定自动化规则。始终返回紧凑 JSON，并包含 hash（传给 mijia_patch_graph 的 baseHash 防止覆盖他人修改）。
+      description: `获取指定自动化规则，并返回 hash（修改时传给 baseHash 防止覆盖他人修改）。
 
-  - detail="summary"（默认）：{id,name,enable,hash,nodeCount,note?,nodes:[{id,type,params?,out?}]}，不含坐标/URN/inputs，足以理解规则逻辑
-  - detail="full"：{hash, graph} 完整规则对象（体积大，超过 40000 字节会被截断）
-  - node_ids：只返回这些节点的完整 JSON 及规则头 {id,name,enable,hash,nodeCount}，修改前按需取节点首选此方式
-response_format 为兼容保留，markdown 与 json 输出相同。`,
+  - format="text"（推荐）：紧凑文本，一行一个节点，备注为 Markdown；体积约为 JSON 摘要的一半，可直接用于 mijia_patch_graph 的 add/replace 和 mijia_put_graph_text。语法见 mijia-automation Skill 的「规则文本格式」。
+  - focus + depth：只返回这些节点及其上下游 depth 步内的节点（文本格式），读大规则时首选
+  - ifNoneMatch：传入已知 hash，未变化时只返回 {unchanged:true, hash}
+  - detail="summary"（默认，兼容旧用法）：紧凑 JSON 摘要
+  - detail="full"：完整规则对象（体积大）
+  - node_ids：只返回这些节点的完整 JSON`,
       inputSchema: z.object({
         id: z.string().describe("规则ID"),
+        format: z.enum(["json", "text"]).optional().default("json").describe("text=紧凑文本（推荐），json=沿用 detail/node_ids"),
+        focus: z.array(z.string()).optional().describe("只看这些节点及其上下游（自动使用文本格式）"),
+        depth: z.number().int().min(0).max(5).optional().default(1).describe("focus 的上下游步数，默认 1"),
+        ifNoneMatch: z.string().optional().describe("已知 hash；规则未变化时只返回 unchanged"),
         detail: z.enum(["summary", "full"]).optional().default("summary").describe("summary=紧凑摘要（默认），full=完整规则"),
         node_ids: z.array(z.string()).optional().describe("只返回这些节点的完整 JSON"),
         response_format: ResponseFormatSchema.optional().default("markdown").describe("兼容保留，输出均为紧凑 JSON"),
@@ -203,9 +216,20 @@ response_format 为兼容保留，markdown 与 json 输出相同。`,
         openWorldHint: true,
       },
     },
-    async ({ id, detail = "summary", node_ids }) => {
+    async ({ id, format = "json", focus, depth = 1, ifNoneMatch, detail = "summary", node_ids }) => {
       try {
         gatewayManager.ensureConnected();
+        if (ifNoneMatch) {
+          const loaded = await loadGraph(id);
+          if (!loaded.graph) return errorResult(new Error(loaded.error), "get_graph");
+          const hash = graphHash(loaded.graph.nodes);
+          if (hash === ifNoneMatch) return jsonResult({ id, unchanged: true, hash });
+        }
+        if (format === "text" || (focus && focus.length > 0)) {
+          const result = await getGraphText(gatewayManager.gateway!, id, { focus, depth });
+          if (!result.success) return errorResult(new Error(result.error), "get_graph");
+          return jsonResult({ ...result.data! }, { hint: "请改用 focus 只看相关节点" });
+        }
         const loaded = await loadGraph(id);
         if (!loaded.graph) return errorResult(new Error(loaded.error), "get_graph");
 
@@ -222,24 +246,45 @@ response_format 为兼容保留，markdown 与 json 输出相同。`,
     "mijia_patch_graph",
     {
       title: "增量修改自动化规则",
-      description: `修改已有规则的首选方式：只发送变化的节点，无需整图重传。
+      description: `修改已有规则的首选方式：一次调用完成建变量、改节点、改备注、结构与能力校验、写入和回读。
 
-服务端会重新读取规则、应用补丁（先 removeIds 并清理指向被删节点的连线，再 upsert，最后 merge）、保留原有卡片坐标、执行结构校验与设备能力校验后写入。
-  - baseHash: 传入 mijia_get_graph 返回的 hash，规则已被他人修改时拒绝写入
-  - upsert: 完整节点，按 id 替换或新增；不能改已有节点的 type（需先 removeIds 再另行 upsert）
+  - baseHash: mijia_get_graph 返回的 hash，规则已被他人修改时拒绝写入
+  - add: 新增节点（紧凑文本，可多行，可含 var 声明和 @tts/@pulse 宏）；节点 ID 已存在时拒绝，避免误覆盖
+  - replace: 整行替换已有节点（紧凑文本）；ID 不存在时拒绝
   - merge: [{id, props?, cfg?, inputs?, outputs?}] 浅合并；值为 null 删除该键；outputs 按端口替换
-  - removeIds: 删除的节点 ID
-  - name / enable: 同时修改规则名称或启用状态
-备注节点(nop)在摘要里只列 noteIds，修改备注用 merge 改 cfg.contents 或先取 node_ids 全量。
-修改节点内容前请先阅读 mijia-automation Skill 的节点模板。只改 cfg.pos 坐标不算变化，会返回无变化且不写入；无变化时返回 message="无变化"。
+  - removeIds: 删除节点并清理指向它们的连线
+  - note: 备注操作数组，按顺序执行：{section, append} 在某段末尾加一条；{replace, with} 替换恰好出现一次的原文；{changelog} 在「变更」段最前加一条；{set} 整体替换为 Markdown。缺省改第一个备注节点（noteId 可指定），没有备注时新建
+  - variables: [{id, scope, type, value, name?}] 需要的变量，不存在才创建；scope 写 "rule" 表示本规则
+  - upsert: 完整 JSON 节点（兼容旧用法）
+  - dryRun: 只预览改动，不写入
+连线默认端口：写目标节点 ID 即可（delay/varGet 等自动用 input，deviceOutput/condition 用 trigger）；condition.condition、logicOr 的 inputN 等需写明端口。卡片坐标自动保留，新节点自动布局。
 
-返回紧凑 JSON：{graphId, hash, changedIds, nodeCount, message}`,
+返回：{graphId, hash, added, changed, removed, noteChanged, createdVariables, diff（改动节点的文本）, message}。写入前已完成两项校验，无需再单独调用校验工具。`,
       inputSchema: z.object({
         id: z.string().describe("规则ID"),
         baseHash: z.string().optional().describe("mijia_get_graph 返回的 hash，用于拒绝过期修改"),
-        upsert: z.array(GraphNodeSchema).optional().describe("新增或整体替换的节点"),
+        add: z.string().optional().describe("新增节点的紧凑文本"),
+        replace: z.string().optional().describe("替换已有节点的紧凑文本"),
         merge: z.array(GraphMergeSchema).optional().describe("局部合并的节点字段"),
         removeIds: z.array(z.string()).optional().describe("要删除的节点 ID"),
+        note: z.array(z.object({
+          section: z.string().optional(),
+          append: z.string().optional(),
+          replace: z.string().optional(),
+          with: z.string().optional(),
+          changelog: z.string().optional(),
+          set: z.string().optional(),
+        })).optional().describe("备注操作"),
+        noteId: z.string().optional().describe("要修改的备注节点 ID，缺省为第一个备注"),
+        variables: z.array(z.object({
+          id: z.string().regex(/^[a-zA-Z0-9]+$/),
+          scope: z.string().default("rule"),
+          type: z.enum(["number", "string"]),
+          value: z.union([z.number(), z.string()]),
+          name: z.string().optional(),
+        })).optional().describe("需要的变量；不存在时创建"),
+        upsert: z.array(GraphNodeSchema).optional().describe("新增或整体替换的完整 JSON 节点（兼容）"),
+        dryRun: z.boolean().optional().describe("只预览，不写入"),
         name: z.string().min(1).optional().describe("新规则名称"),
         enable: z.boolean().optional().describe("是否启用"),
       }),
@@ -250,16 +295,128 @@ response_format 为兼容保留，markdown 与 json 输出相同。`,
         openWorldHint: true,
       },
     },
-    async ({ id, baseHash, upsert, merge, removeIds, name, enable }) => {
+    async ({ id, baseHash, add, replace, merge, removeIds, note, noteId, variables, upsert, dryRun, name, enable }) => {
       try {
         gatewayManager.ensureConnected();
-        const result = await patchGraph(gatewayManager.gateway!, id, { baseHash, upsert, merge, removeIds, name, enable });
-        if (!result.success) return errorResult(new Error(result.error), "patch_graph");
-
-        const data = result.data!;
-        return jsonResult({ graphId: data.graphId, hash: data.hash, changedIds: data.changedIds, nodeCount: data.nodeCount, message: result.message ?? "" });
+        for (const variable of variables || []) {
+          if (typeof variable.value !== variable.type) return textResult(`Error: 变量 ${variable.id} 的初始值类型必须是 ${variable.type} (patch_graph)`, undefined, true);
+        }
+        const hasNodeChange = Boolean(add || replace || merge?.length || removeIds?.length || note?.length || variables?.length || upsert?.length);
+        if (hasNodeChange) {
+          const result = await patchGraphV2(gatewayManager.gateway!, id, {
+            baseHash, add, replace, merge, removeIds, note, noteId, upsert, dryRun,
+            variables: variables as Array<{ id: string; scope: string; type: "number" | "string"; value: number | string; name?: string }> | undefined,
+          });
+          if (!result.success) return errorResult(new Error(result.error), "patch_graph");
+          if (!dryRun && (name !== undefined || enable !== undefined)) {
+            const meta = await updateGraph(gatewayManager.gateway!, id, { name, enable });
+            if (!meta.success) return errorResult(new Error(meta.error), "patch_graph");
+          }
+          return jsonResult({ ...result.data! }, { hint: "改动过多，请分批提交" });
+        }
+        if (name === undefined && enable === undefined) return jsonResult({ graphId: id, message: "无变化" });
+        const meta = await updateGraph(gatewayManager.gateway!, id, { name, enable });
+        if (!meta.success) return errorResult(new Error(meta.error), "patch_graph");
+        return jsonResult({ graphId: id, message: meta.message ?? "已更新" });
       } catch (error) {
         return errorResult(error, "patch_graph");
+      }
+    }
+  );
+
+  // ==================== mijia_put_graph_text ====================
+  server.registerTool(
+    "mijia_put_graph_text",
+    {
+      title: "用紧凑文本替换规则",
+      description: `用一份完整的紧凑文本（mijia_get_graph format=text 的格式）替换规则内容，是「规则文件」工作流的服务端：本地 .rule 文件改完后由 scripts/rules.mjs push 调用。
+
+服务端解析文本、按差异计算新增/修改/删除、创建 var 声明的变量、执行结构与能力校验、保留卡片坐标后写入并回读，返回改动明细和写入后的规范文本。必须传 baseHash，网关上的规则在此期间被改过时拒绝写入。dryRun=true 只预览。`,
+      inputSchema: z.object({
+        id: z.string().describe("规则ID"),
+        baseHash: z.string().describe("拉取文本时的 hash"),
+        text: z.string().describe("完整紧凑文本"),
+        dryRun: z.boolean().optional().describe("只预览，不写入"),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ id, baseHash, text, dryRun }) => {
+      try {
+        gatewayManager.ensureConnected();
+        const result = await putGraphText(gatewayManager.gateway!, id, { text, baseHash, dryRun });
+        if (!result.success) return errorResult(new Error(result.error), "put_graph_text");
+        return jsonResult({ ...result.data! });
+      } catch (error) {
+        return errorResult(error, "put_graph_text");
+      }
+    }
+  );
+
+  // ==================== mijia_query_rules ====================
+  server.registerTool(
+    "mijia_query_rules",
+    {
+      title: "跨规则查询节点",
+      description: `在服务端扫描全部规则，只返回命中的节点（紧凑文本），不把整张规则传回对话。
+
+条件可组合（同时满足）：
+  - variable: "$livingOccupied"（全局）、"$R1234.x"（指定作用域）或 "x"（任意作用域）
+  - device: did 或设备名称；property: "siid/piid"
+  - nodeType: 节点类型，如 varChange
+  - contains: 节点文本包含的字符串
+  - graphs: 只查这些规则
+返回：{scanned, hits:[{graphId, name, enable, lines}]}`,
+      inputSchema: z.object({
+        variable: z.string().optional(),
+        device: z.string().optional(),
+        property: z.string().optional(),
+        nodeType: z.string().optional(),
+        contains: z.string().optional(),
+        graphs: z.array(z.string()).optional(),
+      }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async (query) => {
+      try {
+        gatewayManager.ensureConnected();
+        const result = await queryRules(gatewayManager.gateway!, query);
+        if (!result.success) return errorResult(new Error(result.error), "query_rules");
+        return jsonResult({ ...result.data! }, { hint: "命中过多，请增加条件或限定 graphs" });
+      } catch (error) {
+        return errorResult(error, "query_rules");
+      }
+    }
+  );
+
+  // ==================== mijia_get_log ====================
+  server.registerTool(
+    "mijia_get_log",
+    {
+      title: "查看规则执行日志",
+      description: `读取网关执行日志并在服务端过滤，只返回需要的几行。网关日志只记录规则执行（连线触发和节点取值），不记录设备自身的上报。
+
+  - graph: 规则ID；nodes: 只看这些节点
+  - minutes: 最近多少分钟，默认 60
+  - limit: 最多返回多少行（取最新），默认 200
+  - summary=true: 只返回各节点执行次数，用来快速找出执行链在哪一步断开
+时间为 UTC+8。行格式：「时间 源节点.端口 -> 目标节点.端口」或「时间 节点 = 值」`,
+      inputSchema: z.object({
+        graph: z.string().optional(),
+        nodes: z.array(z.string()).optional(),
+        minutes: z.number().positive().max(10080).optional(),
+        limit: z.number().int().positive().max(2000).optional(),
+        summary: z.boolean().optional(),
+      }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async (query) => {
+      try {
+        gatewayManager.ensureConnected();
+        const result = await getGraphLog(gatewayManager.gateway!, query);
+        if (!result.success) return errorResult(new Error(result.error), "get_log");
+        return jsonResult({ ...result.data! }, { hint: "请缩短 minutes、减少 limit 或指定 graph/nodes" });
+      } catch (error) {
+        return errorResult(error, "get_log");
       }
     }
   );
@@ -284,6 +441,7 @@ response_format 为兼容保留，markdown 与 json 输出相同。`,
 
 参数：
   - name (string): 规则名称
+  - text (string, 推荐): 紧凑文本（见 mijia-automation Skill 的「规则文本格式」），支持 var 声明与 @tts/@pulse 宏，与 nodes 二选一
   - nodes (array): 节点列表，包含触发器、条件、动作等（必须符合 mijia-automation Skill 中的模板规范）
   - variables (array, optional): 同时创建的本规则变量；节点中使用 scope="rule"，系统会替换为真实作用域
   - enable (boolean, optional): 是否立即启用，默认 true
@@ -296,7 +454,8 @@ response_format 为兼容保留，markdown 与 json 输出相同。`,
   - "网关未连接" - 请先调用 mijia_auth`,
       inputSchema: z.object({
         name: z.string().min(1).describe("规则名称"),
-        nodes: z.array(z.any()).describe("节点列表"),
+        nodes: z.array(z.any()).optional().describe("节点列表（与 text 二选一）"),
+        text: z.string().optional().describe("紧凑文本（与 nodes 二选一，推荐）；$R.名 指本规则变量，var $R.名 声明的变量随规则一起创建"),
         variables: z.array(GraphVariableSchema).optional().describe("本规则变量定义；节点引用时 scope 使用 rule"),
         enable: z.boolean().default(true).describe("是否启用，默认 true"),
       }),
@@ -307,10 +466,22 @@ response_format 为兼容保留，markdown 与 json 输出相同。`,
         openWorldHint: true,
       },
     },
-    async ({ name, nodes, variables, enable }) => {
+    async ({ name, nodes, text, variables, enable }) => {
       try {
         gatewayManager.ensureConnected();
-        const result = await createGraph(gatewayManager.gateway!, { name, nodes, variables, enable });
+        if (!nodes === !text) return textResult("Error: nodes 与 text 必须且只能提供一个 (create_graph)", undefined, true);
+        let createNodes = nodes as GraphNode[] | undefined;
+        let createVariables = variables;
+        if (text) {
+          const ctx = await buildTextContext(gatewayManager.gateway!, "rule", [], text);
+          ctx.scope = "rule";
+          const parsed = textToNodes(text, ctx);
+          const foreign = parsed.variables.filter((variable) => variable.scope !== "rule");
+          if (foreign.length > 0) return textResult(`Error: 新建规则的 var 只能声明本规则变量（$R.名），全局变量请先用 mijia_create_variable 创建：${foreign.map((v) => `${v.scope}/${v.id}`).join(", ")} (create_graph)`, undefined, true);
+          createNodes = parsed.nodes;
+          createVariables = [...(variables || []), ...parsed.variables.map(({ id, type, value, name: label }) => ({ id, type, value, ...(label ? { name: label } : {}) }))] as typeof variables;
+        }
+        const result = await createGraph(gatewayManager.gateway!, { name, nodes: createNodes!, variables: createVariables, enable });
         if (!result.success) return errorResult(new Error(result.error), "create_graph");
 
         return jsonResult({ graphId: result.data?.graphId, message: result.message });

@@ -5,13 +5,10 @@
 import { GatewayClient } from '../gateway/client';
 import { randomInt } from 'node:crypto';
 import type { Graph, GraphNode, GraphSummary, CreateGraphInput, UpdateGraphInput, ValidationError, DeviceUsageNode, DeviceUsageReport, DeviceUsage } from '../types/graph';
-import type { DeviceListResponse } from '../types/device';
 import type { ToolResponse } from '../types';
-import { validateGraph, layoutNodes, mapLimit } from './base';
+import { validateGraph, layoutNodes } from './base';
 import { validateGraphCapabilitiesWithGateway } from './capabilityValidation';
-
-/** 全量扫描规则时的并发上限 */
-const GRAPH_SCAN_CONCURRENCY = 6;
+import { getDeviceList, invalidateGraph, scanGraphs } from './gatewayCache';
 
 function nextGraphId(): string {
     return String(randomInt(1_000_000_000_000, 10_000_000_000_000));
@@ -83,13 +80,16 @@ export async function getGraphs(gateway: GatewayClient): Promise<ToolResponse<Gr
 
 export async function getGraph(gateway: GatewayClient, id: string): Promise<ToolResponse<Graph>> {
     try {
-        const graph = await gateway.callApi<Graph>('getGraph', { id }, 10000);
-        if (!graph.cfg) {
-            const graphList = await gateway.callApi<Array<{
+        // 网关的 getGraph 只返回 {id, nodes}，名称与启用状态在规则列表里；两次请求同时发
+        const [graph, graphList] = await Promise.all([
+            gateway.callApi<Graph>('getGraph', { id }, 10000),
+            gateway.callApi<Array<{
                 id: string;
                 enable?: boolean;
                 userData?: Graph['cfg']['userData'];
-            }>>('getGraphList', {}, 10000);
+            }>>('getGraphList', {}, 10000).catch(() => undefined),
+        ]);
+        if (!graph.cfg) {
             const info = Array.isArray(graphList) ? graphList.find((item) => item.id === id) : undefined;
             graph.cfg = {
                 id,
@@ -116,8 +116,10 @@ export async function createGraph(gateway: GatewayClient, input: CreateGraphInpu
     let shellCreatedHere = false;
     let resumedExisting = false;
     try {
-        const existingGraphs = await gateway.callApi<Array<{ id: string }>>('getGraphList', {}, 10000);
-        const scopeResult = await gateway.callApi<{ scopes?: string[] } | string[]>('getVarScopeList', {}, 10000);
+        const [existingGraphs, scopeResult] = await Promise.all([
+            gateway.callApi<Array<{ id: string }>>('getGraphList', {}, 10000),
+            gateway.callApi<{ scopes?: string[] } | string[]>('getVarScopeList', {}, 10000),
+        ]);
         const existingIds = new Set((Array.isArray(existingGraphs) ? existingGraphs : []).map((graph) => graph.id));
         const existingScopes = new Set(Array.isArray(scopeResult) ? scopeResult : scopeResult?.scopes || []);
         while (!input.graphId && (existingIds.has(graphId) || existingScopes.has(`R${graphId}`))) graphId = nextGraphId();
@@ -190,27 +192,33 @@ export async function createGraph(gateway: GatewayClient, input: CreateGraphInpu
             const existingVariables = new Map(Array.isArray(variableResponse)
                 ? variableResponse.flatMap((variable) => typeof variable.id === 'string' ? [[variable.id, variable] as const] : [])
                 : Object.entries(variableResponse || {}));
+            const toCreate: typeof variables = [];
             for (const variable of variables) {
                 const existingVariable = existingVariables.get(variable.id);
                 if (existingVariable) {
                     if (existingVariable.type !== variable.type) throw new Error(`变量 ${variable.id} 类型与草稿不一致`);
                     continue;
                 }
-                createdVariables.push(variable.id);
-                await gateway.callApi('createVar', {
-                    scope: variableScope,
-                    id: variable.id,
-                    type: variable.type,
-                    value: variable.value,
-                    userData: { name: variable.name?.trim() || variable.id },
-                }, 10000);
+                toCreate.push(variable);
             }
+            // 变量之间互不依赖，同时创建。先全部记入待清理：请求失败时网关可能已经创建成功，失败回滚也要尝试删除
+            createdVariables.push(...toCreate.map((variable) => variable.id));
+            const results = await Promise.allSettled(toCreate.map((variable) => gateway.callApi('createVar', {
+                scope: variableScope,
+                id: variable.id,
+                type: variable.type,
+                value: variable.value,
+                userData: { name: variable.name?.trim() || variable.id },
+            }, 10000)));
+            const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+            if (failed) throw failed.reason;
         }
         const capabilityReport = await validateGraphCapabilitiesWithGateway(gateway, graph);
         if (!capabilityReport.valid) throw new Error(`规则能力校验失败: ${capabilityReport.errors.map((item) => item.message).join('；')}`);
 
         if (!resumedExisting) shellCreatedHere = true;
         await gateway.callApi('setGraph', graph, 10000);
+        invalidateGraph(gateway, graphId);
 
         return { success: true, data: { graphId }, message: `规则 "${input.name}" 创建成功` };
     } catch (error) {
@@ -237,8 +245,10 @@ export async function createGraph(gateway: GatewayClient, input: CreateGraphInpu
 
 export async function updateGraph(gateway: GatewayClient, id: string, input: UpdateGraphInput): Promise<ToolResponse> {
     try {
-        const existing = await gateway.callApi<Graph>('getGraph', { id }, 10000);
-        const graphList = await gateway.callApi('getGraphList', {}, 10000);
+        const [existing, graphList] = await Promise.all([
+            gateway.callApi<Graph>('getGraph', { id }, 10000),
+            gateway.callApi('getGraphList', {}, 10000),
+        ]);
         const graphInfo = Array.isArray(graphList)
             ? graphList.find((g: Graph) => g.id === id) as GraphListInfo | undefined
             : null;
@@ -264,7 +274,7 @@ export async function writeGraphNodes(
     id: string,
     existing: Graph,
     input: UpdateGraphInput & { graphInfo?: GraphListInfo | null }
-): Promise<ToolResponse> {
+): Promise<ToolResponse<{ nodes: GraphNode[] }>> {
     try {
         const graphInfo: GraphListInfo | null | undefined = 'graphInfo' in input
             ? input.graphInfo
@@ -325,8 +335,9 @@ export async function writeGraphNodes(
         }
 
         await gateway.callApi('setGraph', graph, 10000);
+        invalidateGraph(gateway, id);
 
-        return { success: true, message: `规则 ${id} 更新成功` };
+        return { success: true, message: `规则 ${id} 更新成功`, data: { nodes: graph.nodes } };
     } catch (error) {
         return { success: false, error: `更新规则失败: ${error}` };
     }
@@ -339,6 +350,7 @@ export async function deleteGraph(gateway: GatewayClient, id: string): Promise<T
         const scopes = Array.isArray(scopeResult) ? scopeResult : scopeResult.scopes || [];
         const hasRuleVariables = scopes.includes(scope);
         await deleteGraphConfirmed(gateway, id);
+        invalidateGraph(gateway, id);
         if (!hasRuleVariables) return { success: true, message: `规则 ${id} 删除成功` };
         try {
             await gateway.callApi('deleteVar', { scope, all: true }, 10000);
@@ -412,8 +424,8 @@ export async function findDeviceUsage(
     }
 
     try {
-        const deviceResponse = await gateway.callApi<DeviceListResponse>('getDevList', {}, 10000);
-        const devList = deviceResponse.devList || {};
+        // 设备表与规则扫描互不依赖，同时进行；规则按更新时间缓存，只重读有变化的
+        const [devList, scanned] = await Promise.all([getDeviceList(gateway), scanGraphs(gateway)]);
 
         const targets = new Map<string, { name: string; found: boolean }>();
         for (const did of explicitDids) {
@@ -430,8 +442,7 @@ export async function findDeviceUsage(
             return { success: false, error: `没有匹配 "${input.query}" 的设备，请改用 mijia_get_devices 确认名称` };
         }
 
-        const graphList = await gateway.callApi<Array<{ id: string; enable?: boolean; userData?: { name?: string } }>>('getGraphList', {}, 10000);
-        const summaries = Array.isArray(graphList) ? graphList : [];
+        const summaries = scanned.map((item) => item.summary);
 
         const hits = new Map<string, DeviceUsage>();
         for (const [did, info] of targets) {
@@ -440,15 +451,7 @@ export async function findDeviceUsage(
         const orphanGraphs = new Map<string, string[]>();
         const unreadableGraphs: string[] = [];
 
-        // 并发拉取（上限 6），再按列表顺序处理，保证输出顺序与串行一致
-        const fetched = await mapLimit(summaries, GRAPH_SCAN_CONCURRENCY, async (summary) => {
-            try {
-                const graph = await gateway.callApi<Graph>('getGraph', { id: summary.id }, 10000);
-                return graph.nodes || [];
-            } catch {
-                return null;
-            }
-        });
+        const fetched = scanned.map((item) => item.nodes);
 
         for (const [index, summary] of summaries.entries()) {
             const graphName = summary.userData?.name || summary.id;

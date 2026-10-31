@@ -13,6 +13,12 @@ export { getDevices, getDevice, fetchMiotSpec, clearMiotSpecCache } from './tool
 export { getGraphs, getGraph, createGraph, updateGraph, deleteGraph, toggleGraph, findDeviceUsage } from './tools/graph';
 export { graphHash, summarizeGraph, applyGraphPatch, patchGraph, validateGraphById } from './tools/graphEdit';
 export type { GraphCompactSummary, GraphNodeSummary, GraphPatch } from './tools/graphEdit';
+export { getGraphText, putGraphText, patchGraphV2, queryRules, getGraphLog, parseGatewayLog, buildTextContext, focusIds } from './tools/graphText';
+export type { GraphTextResult, GraphChangeReport, PatchV2Input, RuleQuery, RuleQueryHit, LogQuery } from './tools/graphText';
+export { nodesToText, textToNodes, nodeLines, sameNode } from './tools/ruleText';
+export type { RuleTextContext, RuleTextVariable, ParsedRuleText } from './tools/ruleText';
+export { noteToMarkdown, markdownToNoteContents, applyNoteOperations } from './tools/ruleNote';
+export type { NoteOperation } from './tools/ruleNote';
 export { getVariables, setVariable, createVariable, deleteVariable, getVariableValue, getVariableConfig } from './tools/variable';
 export { callGatewayApi, READ_ONLY_GATEWAY_METHODS } from './tools/misc';
 export { validateGraphCapabilitiesWithGateway, validateGraphVariablesWithGateway } from './tools/capabilityValidation';

@@ -5,9 +5,8 @@
 import { GatewayClient } from '../gateway/client';
 import type { Variable } from '../types';
 import type { ToolResponse } from '../types';
-import type { Graph } from '../types/graph';
 import { graphReferencesVariable } from './capabilityValidation';
-import { mapLimit } from './base';
+import { scanGraphs } from './gatewayCache';
 
 export async function getVariables(gateway: GatewayClient, scope: string = 'global'): Promise<ToolResponse<Variable[]>> {
     try {
@@ -53,14 +52,11 @@ export async function createVariable(
 
 export async function deleteVariable(gateway: GatewayClient, id: string, scope: string = 'global'): Promise<ToolResponse> {
     try {
-        const graphList = await gateway.callApi<Array<{ id: string }>>('getGraphList', {}, 10000);
-        const summaries = Array.isArray(graphList) ? graphList : [];
-        // 并发读取全部规则；任一规则读取失败即整体失败，避免误删仍被引用的变量
-        const referenced = await mapLimit(summaries, 6, async (summary) => {
-            const graph = await gateway.callApi<Graph>('getGraph', { id: summary.id }, 10000);
-            return graphReferencesVariable(graph.nodes || [], id, scope);
-        });
-        const references = summaries.filter((_, index) => referenced[index]).map((summary) => summary.id);
+        // 安全相关：忽略缓存全部重读；任一规则读取失败即整体失败，避免误删仍被引用的变量
+        const scanned = await scanGraphs(gateway, { fresh: true });
+        const unreadable = scanned.filter((item) => !item.nodes).map((item) => item.summary.id);
+        if (unreadable.length > 0) throw new Error(`读取规则失败: ${unreadable.join(', ')}`);
+        const references = scanned.filter((item) => graphReferencesVariable(item.nodes!, id, scope)).map((item) => item.summary.id);
         if (references.length > 0) return { success: false, error: `变量 ${scope}/${id} 仍被规则引用: ${references.join(', ')}` };
         await gateway.callApi('deleteVar', { scope, id }, 10000);
         return { success: true, message: `变量 ${id} 删除成功` };

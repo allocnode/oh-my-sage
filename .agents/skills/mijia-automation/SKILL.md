@@ -195,15 +195,25 @@ MCP 模式下**创建**超过 10 个节点的复杂规则时，不要调用两�
 
 小规则和 Web Agent 继续使用原双校验流程。草稿工具缺失时不要虚构调用，改用原流程。复杂规则草稿提交失败时会保留；成功响应丢失或重复提交时返回同一个规则 ID。
 
-### MCP 修改已有规则：优先 `mijia_patch_graph`
+### MCP 修改已有规则：用紧凑文本，一条规则一读一写
 
-1. `mijia_get_graph` 默认返回紧凑摘要和 `hash`；需要某几个节点的完整 JSON 时传 `node_ids`，不要默认取 `detail="full"`。
-2. `mijia_patch_graph` 只发送变化：`upsert` 整节点替换或新增，`merge` 浅合并字段（值为 `null` 删除该键），`removeIds` 删除节点并清理指向它的连线；传 `baseHash` 防止覆盖他人修改。服务端会保留原有卡片坐标并执行两项校验。
-3. 修改前后可用 `mijia_validate_graph` / `mijia_validate_graph_capabilities` 传 `id` 校验已保存规则，不必上传整图；能力校验看返回的 `valid` 字段。
-4. `mijia_update_graph` 是整图替换，仅在补丁无法表达时使用（兼容保留）。
-5. Web Agent 没有补丁工具，继续使用 update_graph。
+读写已有规则时优先使用 [规则文本格式](../../../docs/rule-text-format.md)，不要来回传节点 JSON。
 
-**⚠️ create_graph / patch_graph / update_graph 内置了校验逻辑。如果节点连接有 error 级别的问题，工具会返回错误并拒绝调用 setGraph。修复后重新调用即可。**
+1. **读**：`mijia_get_graph {id, format:"text"}` 一次拿到备注（Markdown）和全部节点（一行一个）以及 `hash`。大规则只看相关部分：`focus:["节点ID"], depth:1`。已读过且只想确认没变：`ifNoneMatch:<hash>`。
+2. **找引用**：「谁在读某变量 / 谁在写某设备属性」用 `mijia_query_rules {variable:"$livingOccupied"}` 或 `{device:"客厅音箱", property:"2/1"}`，不要逐条读规则。
+3. **写**：一次 `mijia_patch_graph` 完成全部改动：
+   - `add`：新增节点的文本，可多行，可含 `var` 声明和 `@tts`、`@pulse` 宏；ID 已存在会拒绝，不会误覆盖。
+   - `replace`：整行替换已有节点；ID 不存在会拒绝。
+   - `merge`：只改个别字段或连线（`outputs` 按端口整体替换），`removeIds`：删除节点并清理连线。
+   - `note`：`{section, append}`、`{replace, with}`、`{changelog}` 修改备注，不用手工拼富文本，高度自动调整。
+   - `variables`：需要的变量，不存在才创建，写入失败自动删除。
+   - `baseHash` 必传；`dryRun:true` 只预览。
+4. **不必再单独校验和回读**：写入前已做结构与设备能力两项校验，写入后已回读；返回值里的 `diff` 就是改动节点写入后的文本。
+5. **改动很大**：用 `scripts/rules.mjs pull` 把规则拉成本地文件，用普通文件编辑只改需要的行，再 `push`（服务端为 `mijia_put_graph_text`）。
+6. **看执行情况**：`mijia_get_log {graph, minutes}`；先用 `summary:true` 看各节点执行次数，找出执行链断在哪一步。
+7. `mijia_update_graph` 是整图替换，仅兼容保留。Web Agent 没有这些工具，继续使用 update_graph。
+
+**⚠️ create_graph / patch_graph / put_graph_text / update_graph 内置了校验逻辑。如果节点连接有 error 级别的问题，工具会返回错误并拒绝调用 setGraph。修复后重新调用即可。**
 
 ## 节点模板（直接复制使用）
 
