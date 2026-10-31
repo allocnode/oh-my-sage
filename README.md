@@ -15,14 +15,48 @@ Oh My Sage 是一个**工具驱动的 AI Agent**，通过自然语言对话帮�
 
 ## ✨ 核心特性
 
-- 🤖 **Agent 循环** - 持续运行的思考-行动循环，非一次性响应
-- 🛠️ **工具驱动** - 所有能力通过工具实现，灵活可扩展
-- 💭 **思考可见** - 输出思考过程，让你了解 Agent 在做什么
-- 💡 **多方案建议** - 为你提供多种实现方案供选择
-- ✅ **确认后执行** - 重要操作前获取你的确认
-- 🔄 **流式输出** - 实时显示处理过程
-- 📐 **自动布局** - 规则节点自动排版，清晰展示流程
-- 🔌 **MCP 支持** - 通过 Model Context Protocol 集成到 AI 编程助手
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/feature-loop.webp" alt="Agent 循环：思考、调用工具、看结果、再判断，直到完成"><br>
+      <b>🤖 Agent 循环</b><br>持续运行的思考-行动循环，非一次性响应
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/feature-tools.webp" alt="工具驱动：查设备、读规则、改规则、校验、查日志、变量，可扩展新工具"><br>
+      <b>🛠️ 工具驱动</b><br>所有能力通过工具实现，灵活可扩展
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/feature-think.webp" alt="思考可见：对话中可展开的思考过程"><br>
+      <b>💭 思考可见</b><br>输出思考过程，让你了解 Agent 在做什么
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/feature-options.webp" alt="多方案建议：从简单到智能的三个方案供选择"><br>
+      <b>💡 多方案建议</b><br>为你提供多种实现方案供选择
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/feature-confirm.webp" alt="确认后执行：写入网关前弹出确认，列出改动"><br>
+      <b>✅ 确认后执行</b><br>重要操作前获取你的确认
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/feature-stream.webp" alt="流式输出：连接、获取设备、校验、写入，进度实时显示"><br>
+      <b>🔄 流式输出</b><br>实时显示处理过程
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/layout.webp" alt="自动布局：重叠缠绕的卡片整理为分层排列、0 重叠"><br>
+      <b>📐 自动布局</b><br>规则节点自动排版，清晰展示流程
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/feature-mcp.webp" alt="MCP 支持：AI 编程助手通过 MCP 连接 oh-my-sage 控制米家设备"><br>
+      <b>🔌 MCP 支持</b><br>通过 Model Context Protocol 集成到 AI 编程助手
+    </td>
+  </tr>
+</table>
 
 ### 一句话创建规则
 
@@ -38,9 +72,7 @@ Oh My Sage 是一个**工具驱动的 AI Agent**，通过自然语言对话帮�
 
 ### 卡片自动排版
 
-新规则按连接关系分层排版；修改已有规则时原有卡片不动，只给新卡片找空位，写入前做碰撞复检，新放的卡片不会与任何卡片重叠。乱掉的规则可一键全图重排，也可用 `mijia_check_layout` 只读检查。
-
-![自动布局：之前卡片重叠、连线缠绕，之后分层排列、0 重叠](docs/images/layout.webp)
+新规则按连接关系分层排版；修改已有规则时原有卡片不动，只给新卡片找空位，写入前做碰撞复检，新放的卡片不会与任何卡片重叠。乱掉的规则可一键全图重排，也可用 `mijia_check_layout` 只读检查。效果见上方「自动布局」图。
 
 ### 两种入口，共用一个核心
 
