@@ -15,23 +15,38 @@ import { getGraph, writeGraphNodes } from './graph';
 import { applyGraphPatch, graphHash, type GraphPatch } from './graphEdit';
 import { applyNoteOperations, markdownToNoteContents, noteHeight, noteToMarkdown, type NoteOperation } from './ruleNote';
 import { collectDeviceTokens, nodeLines, nodesToText, sameNode, textToNodes, type RuleTextContext, type RuleTextVariable } from './ruleText';
-import { mapLimit } from './base';
+import { getDeviceList, getDeviceListFor, invalidateGraph, scanGraphs } from './gatewayCache';
 
-const SCAN_CONCURRENCY = 6;
+/** 同时读取规则与设备表（设备表走短时缓存） */
+async function loadGraphAndDevices(gateway: GatewayClient, id: string): Promise<{ graph?: Graph; devList?: DeviceListResponse['devList']; error?: string }> {
+    const [current, devList] = await Promise.all([getGraph(gateway, id), getDeviceList(gateway).catch(() => undefined)]);
+    if (!current.success) return { error: current.error };
+    const graph = current.data!;
+    graph.nodes = graph.nodes || [];
+    return { graph, devList };
+}
+
+/** 文本里引用了缓存设备表中没有的设备时强制刷新一次 */
+async function devListFor(gateway: GatewayClient, devList: DeviceListResponse['devList'] | undefined, nodes: GraphNode[], text?: string): Promise<DeviceListResponse['devList']> {
+    const tokens = [...(text ? collectDeviceTokens(text) : []), ...nodes.map((node) => node.props?.did).filter((did): did is string => typeof did === 'string')];
+    if (!devList) return getDeviceListFor(gateway, tokens);
+    const names = new Set(Object.values(devList).map((device) => device.name?.trim()));
+    return tokens.some((token) => !devList[token] && !names.has(token.trim())) ? getDeviceList(gateway, { force: true }) : devList;
+}
+
 
 // ==================== 上下文 ====================
 
-/** 构建文本编解码上下文：设备表 + 用到的设备能力（能力拉取失败时降级为按取值推断） */
-export async function buildTextContext(gateway: GatewayClient, graphId: string, nodes: GraphNode[], text?: string): Promise<RuleTextContext> {
-    const response = await gateway.callApi<DeviceListResponse>('getDevList', {}, 10000);
-    const devList = response.devList || {};
+/** 构建文本编解码上下文：设备表（短时缓存）+ 用到的设备能力（能力拉取失败时降级为按取值推断） */
+export async function buildTextContext(gateway: GatewayClient, graphId: string, nodes: GraphNode[], text?: string, devListIn?: DeviceListResponse['devList']): Promise<RuleTextContext> {
+    const tokens = text ? collectDeviceTokens(text) : [];
+    const nodeDids = nodes.map((node) => node.props?.did).filter((did): did is string => typeof did === 'string');
+    const devList = devListIn ?? await getDeviceListFor(gateway, [...new Set([...tokens, ...nodeDids])]);
     const devices = new Map(Object.entries(devList).map(([did, device]) => [did, { name: device.name, urn: device.urn }]));
-    const dids = new Set(nodes.map((node) => node.props?.did).filter((did): did is string => typeof did === 'string'));
-    if (text) {
-        for (const token of collectDeviceTokens(text)) {
-            if (devices.has(token)) dids.add(token);
-            for (const [did, device] of devices) if (device.name.trim() === token.trim()) dids.add(did);
-        }
+    const dids = new Set(nodeDids);
+    for (const token of tokens) {
+        if (devices.has(token)) dids.add(token);
+        for (const [did, device] of devices) if (device.name.trim() === token.trim()) dids.add(did);
     }
     const urns = [...new Set([...dids].map((did) => devices.get(did)?.urn).filter((urn): urn is string => Boolean(urn)))];
     const specs = new Map<string, { properties: NonNullable<Awaited<ReturnType<typeof fetchMiotSpec>>['properties']>; actions: Array<{ siid: number; aiid?: number; desc: string; type: string }> }>();
@@ -93,12 +108,12 @@ export async function getGraphText(
     id: string,
     options: { focus?: string[]; depth?: number } = {}
 ): Promise<ToolResponse<GraphTextResult & { missingIds?: string[] }>> {
-    const current = await getGraph(gateway, id);
-    if (!current.success) return current;
-    const graph = current.data!;
-    const nodes = graph.nodes || [];
+    const loaded = await loadGraphAndDevices(gateway, id);
+    if (!loaded.graph) return { success: false, error: loaded.error! };
+    const graph = loaded.graph;
+    const nodes = graph.nodes;
     try {
-        const ctx = await buildTextContext(gateway, id, nodes);
+        const ctx = await buildTextContext(gateway, id, nodes, undefined, await devListFor(gateway, loaded.devList, nodes));
         let text: string;
         let missingIds: string[] | undefined;
         if (options.focus && options.focus.length > 0) {
@@ -174,45 +189,43 @@ function carryPositions(before: GraphNode[], after: GraphNode[]): GraphNode[] {
 /** 创建尚不存在的变量；已存在且类型一致时跳过，类型不一致时报错 */
 async function ensureVariables(gateway: GatewayClient, variables: RuleTextVariable[]): Promise<{ created: RuleTextVariable[]; error?: string }> {
     const created: RuleTextVariable[] = [];
-    const byScope = new Map<string, Map<string, Variable>>();
-    for (const variable of variables) {
-        if (!byScope.has(variable.scope)) {
-            try {
-                const response = await gateway.callApi<Variable[] | Record<string, Variable>>('getVarList', { scope: variable.scope }, 10000);
-                const entries = Array.isArray(response)
-                    ? response.flatMap((item) => typeof item.id === 'string' ? [[item.id, item] as const] : [])
-                    : Object.entries(response || {});
-                byScope.set(variable.scope, new Map(entries));
-            } catch {
-                // 作用域还不存在：创建第一个变量时网关会自动建立
-                byScope.set(variable.scope, new Map());
-            }
+    // 各作用域的变量表同时读取
+    const scopes = [...new Set(variables.map((variable) => variable.scope))];
+    const lists = await Promise.all(scopes.map(async (scope) => {
+        try {
+            const response = await gateway.callApi<Variable[] | Record<string, Variable>>('getVarList', { scope }, 10000);
+            const entries = Array.isArray(response)
+                ? response.flatMap((item) => typeof item.id === 'string' ? [[item.id, item] as const] : [])
+                : Object.entries(response || {});
+            return [scope, new Map(entries)] as const;
+        } catch {
+            // 作用域还不存在：创建第一个变量时网关会自动建立
+            return [scope, new Map<string, Variable>()] as const;
         }
+    }));
+    const byScope = new Map<string, Map<string, Variable>>(lists);
+    const toCreate: RuleTextVariable[] = [];
+    for (const variable of variables) {
         const existing = byScope.get(variable.scope)!.get(variable.id);
         if (existing) {
             if (existing.type !== variable.type) return { created, error: `变量 ${variable.scope}/${variable.id} 已存在且类型为 ${existing.type}，与声明的 ${variable.type} 不一致` };
             continue;
         }
-        try {
-            await gateway.callApi('createVar', { scope: variable.scope, id: variable.id, type: variable.type, value: variable.value, userData: { name: variable.name?.trim() || variable.id } }, 10000);
-            created.push(variable);
-        } catch (error) {
-            return { created, error: `创建变量 ${variable.scope}/${variable.id} 失败: ${error}` };
-        }
+        toCreate.push(variable);
     }
-    return { created };
+    // 变量之间互不依赖，同时创建。全部记入待回滚：请求失败时网关可能已经创建成功
+    created.push(...toCreate);
+    const results = await Promise.allSettled(toCreate.map((variable) => gateway.callApi('createVar', { scope: variable.scope, id: variable.id, type: variable.type, value: variable.value, userData: { name: variable.name?.trim() || variable.id } }, 10000)));
+    let error: string | undefined;
+    results.forEach((result, index) => {
+        if (result.status === 'rejected' && !error) error = `创建变量 ${toCreate[index].scope}/${toCreate[index].id} 失败: ${result.reason}`;
+    });
+    return error ? { created, error } : { created };
 }
 
 async function rollbackVariables(gateway: GatewayClient, created: RuleTextVariable[]): Promise<string[]> {
-    const failures: string[] = [];
-    for (const variable of created) {
-        try {
-            await gateway.callApi('deleteVar', { scope: variable.scope, id: variable.id }, 10000);
-        } catch (error) {
-            failures.push(`${variable.scope}/${variable.id}: ${error}`);
-        }
-    }
-    return failures;
+    const results = await Promise.allSettled(created.map((variable) => gateway.callApi('deleteVar', { scope: variable.scope, id: variable.id }, 10000)));
+    return results.flatMap((result, index) => result.status === 'rejected' ? [`${created[index].scope}/${created[index].id}: ${result.reason}`] : []);
 }
 
 function structuralErrors(id: string, nodes: GraphNode[]): ValidationError[] {
@@ -286,16 +299,17 @@ async function commitNodes(
         return { success: false, error: `${ensured.error}${failures.length ? `；回滚失败: ${failures.join('，')}` : ''}` };
     }
     const nodesChanged = added.length + changed.length + removed.length > 0;
+    let finalNodes = before;
     if (nodesChanged) {
         const written = await writeGraphNodes(gateway, id, existing, { nodes });
         if (!written.success) {
             const failures = await rollbackVariables(gateway, ensured.created);
             return { success: false, error: `${written.error}${failures.length ? `；变量回滚失败: ${failures.join('，')}` : ''}` };
         }
+        // 直接用写入的内容计算 hash，不再回读（与 getGraph 读回的内容一致，由单元测试保证）
+        finalNodes = written.data?.nodes || nodes;
     }
-
-    const reread = await getGraph(gateway, id);
-    const finalNodes = reread.success ? reread.data!.nodes || [] : nodes;
+    invalidateGraph(gateway, id);
     const created = ensured.created.map((variable) => `${variable.scope}/${variable.id}`);
     const message = `规则 ${id} 已更新：新增 ${added.length}，修改 ${changed.length}，删除 ${removed.length}${created.length ? `，新建变量 ${created.length}` : ''}`;
     return {
@@ -319,15 +333,14 @@ export async function putGraphText(
     input: { text: string; baseHash?: string; dryRun?: boolean }
 ): Promise<ToolResponse<GraphChangeReport>> {
     try {
-        const current = await getGraph(gateway, id);
-        if (!current.success) return current;
-        const existing = current.data!;
-        existing.nodes = existing.nodes || [];
+        const loaded = await loadGraphAndDevices(gateway, id);
+        if (!loaded.graph) return { success: false, error: loaded.error! };
+        const existing = loaded.graph;
         const currentHash = graphHash(existing.nodes);
         if (input.baseHash !== undefined && input.baseHash !== currentHash) {
             return { success: false, error: `规则已被修改（hash 不一致），请重新拉取后再改；当前 hash=${currentHash}` };
         }
-        const ctx = await buildTextContext(gateway, id, existing.nodes, input.text);
+        const ctx = await buildTextContext(gateway, id, existing.nodes, input.text, await devListFor(gateway, loaded.devList, existing.nodes, input.text));
         const parsed = textToNodes(input.text, ctx);
         return await commitNodes(gateway, existing, parsed.nodes, parsed.variables, { dryRun: input.dryRun, returnText: true, ctx });
     } catch (error) {
@@ -355,15 +368,15 @@ export interface PatchV2Input extends GraphPatch {
  */
 export async function patchGraphV2(gateway: GatewayClient, id: string, input: PatchV2Input): Promise<ToolResponse<GraphChangeReport>> {
     try {
-        const current = await getGraph(gateway, id);
-        if (!current.success) return current;
-        const existing = current.data!;
-        existing.nodes = existing.nodes || [];
+        const loaded = await loadGraphAndDevices(gateway, id);
+        if (!loaded.graph) return { success: false, error: loaded.error! };
+        const existing = loaded.graph;
         const currentHash = graphHash(existing.nodes);
         if (input.baseHash !== undefined && input.baseHash !== currentHash) {
             return { success: false, error: `规则已被修改（hash 不一致），请重新读取后再改；当前 hash=${currentHash}` };
         }
-        const ctx = await buildTextContext(gateway, id, existing.nodes, [input.add, input.replace].filter(Boolean).join('\n'));
+        const batchText = [input.add, input.replace].filter(Boolean).join('\n');
+        const ctx = await buildTextContext(gateway, id, existing.nodes, batchText, await devListFor(gateway, loaded.devList, existing.nodes, batchText));
         const known = new Set(existing.nodes.map((node) => node.id));
         const variables: RuleTextVariable[] = [...(input.variables || [])].map((variable) => ({ ...variable, scope: variable.scope === 'rule' ? ctx.scope : variable.scope }));
         const upsert: GraphNode[] = [...(input.upsert || [])];
@@ -472,9 +485,9 @@ export async function queryRules(gateway: GatewayClient, query: RuleQuery): Prom
         return { success: false, error: '至少提供 variable、device、nodeType、contains 之一' };
     }
     try {
-        const list = await gateway.callApi<Array<{ id: string; enable?: boolean; userData?: { name?: string } }>>('getGraphList', {}, 10000);
-        const summaries = (Array.isArray(list) ? list : []).filter((item) => !query.graphs || query.graphs.includes(item.id));
-        const devList = (await gateway.callApi<DeviceListResponse>('getDevList', {}, 10000)).devList || {};
+        // 设备表与规则扫描同时进行；规则按更新时间缓存，只重读有变化的
+        const [devList, scanned] = await Promise.all([getDeviceList(gateway), scanGraphs(gateway, { ids: query.graphs })]);
+        const summaries = scanned.map((item) => item.summary);
         let did: string | undefined;
         if (query.device) {
             if (devList[query.device]) did = query.device;
@@ -487,13 +500,7 @@ export async function queryRules(gateway: GatewayClient, query: RuleQuery): Prom
         const property = query.property ? /^(\d+)\/(\d+)$/.exec(query.property) : null;
         if (query.property && !property) return { success: false, error: 'property 写法为 siid/piid' };
 
-        const fetched = await mapLimit(summaries, SCAN_CONCURRENCY, async (summary) => {
-            try {
-                return (await gateway.callApi<Graph>('getGraph', { id: summary.id }, 10000)).nodes || [];
-            } catch {
-                return null;
-            }
-        });
+        const fetched = scanned.map((item) => item.nodes);
         const hits: RuleQueryHit[] = [];
         for (const [index, summary] of summaries.entries()) {
             const nodes = fetched[index];

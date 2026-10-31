@@ -3,6 +3,7 @@ import type { DeviceListResponse, MiotActionCapability, MiotEventCapability, Mio
 import type { Graph, GraphNode, ValidationError } from '../types/graph';
 import type { Variable } from '../types';
 import { fetchMiotSpec } from './device';
+import { getDeviceListFor } from './gatewayCache';
 
 export interface DeviceCapabilities {
     urn: string;
@@ -162,7 +163,26 @@ export async function validateGraphVariablesWithGateway(gateway: GatewayClient, 
     const errors: ValidationError[] = [];
     const variablesByScope = new Map<string, Map<string, Variable>>();
     const ruleVariables = options?.ruleVariables ? new Map(options.ruleVariables.map((variable) => [variable.id, variable])) : undefined;
-    for (const reference of variableReferences(nodes)) {
+    const references = variableReferences(nodes);
+    // 用到的作用域同时读取，而不是逐个排队
+    const scopes = [...new Set(references.map((reference) => reference.scope).filter((scope) => scope !== 'rule'))];
+    const scopeResults = await Promise.all(scopes.map(async (scope) => {
+        try {
+            const response = await gateway.callApi<Variable[] | Record<string, Variable>>('getVarList', { scope }, 10000);
+            const entries = Array.isArray(response)
+                ? response.flatMap((variable) => typeof variable.id === 'string' ? [[variable.id, variable] as const] : [])
+                : Object.entries(response || {});
+            return { scope, variables: new Map(entries) as Map<string, Variable> };
+        } catch (cause) {
+            return { scope, cause };
+        }
+    }));
+    const failedScopes = new Map<string, unknown>();
+    for (const result of scopeResults) {
+        if ('variables' in result) variablesByScope.set(result.scope, result.variables!);
+        else failedScopes.set(result.scope, result.cause);
+    }
+    for (const reference of references) {
         // 本规则变量：只对照声明，不访问网关
         if (reference.scope === 'rule') {
             const declared = ruleVariables?.get(reference.id);
@@ -170,17 +190,10 @@ export async function validateGraphVariablesWithGateway(gateway: GatewayClient, 
             else if (reference.expectedType && declared.type !== reference.expectedType) errors.push(error(reference.node, 'variable_type_mismatch', `变量 rule/${reference.id} 类型为 ${declared.type}，需要 ${reference.expectedType}`));
             continue;
         }
-        if (!variablesByScope.has(reference.scope)) {
-            try {
-                const response = await gateway.callApi<Variable[] | Record<string, Variable>>('getVarList', { scope: reference.scope }, 10000);
-                const entries = Array.isArray(response)
-                    ? response.flatMap((variable) => typeof variable.id === 'string' ? [[variable.id, variable] as const] : [])
-                    : Object.entries(response || {});
-                variablesByScope.set(reference.scope, new Map(entries));
-            } catch (cause) {
-                errors.push(error(reference.node, 'variable_scope_unavailable', `无法读取变量作用域 ${reference.scope}: ${String(cause)}`));
-                variablesByScope.set(reference.scope, new Map());
-            }
+        if (failedScopes.has(reference.scope)) {
+            errors.push(error(reference.node, 'variable_scope_unavailable', `无法读取变量作用域 ${reference.scope}: ${String(failedScopes.get(reference.scope))}`));
+            failedScopes.delete(reference.scope);
+            variablesByScope.set(reference.scope, new Map());
         }
         const variable = variablesByScope.get(reference.scope)!.get(reference.id);
         if (!variable) errors.push(error(reference.node, 'unknown_variable', `变量 ${reference.scope}/${reference.id} 不存在`));
@@ -254,9 +267,10 @@ export function validateGraphCapabilities(nodes: GraphNode[], devices: Map<strin
 
 export async function validateGraphCapabilitiesWithGateway(gateway: GatewayClient, graph: Graph, options?: VariableValidationOptions): Promise<CapabilityValidationReport> {
     const dids = [...new Set(graph.nodes.map((node) => node.props.did).filter((did): did is string => typeof did === 'string'))];
-    const response = dids.length > 0
-        ? await gateway.callApi<DeviceListResponse>('getDevList', {}, 10000)
-        : { devList: {} };
+    // 变量校验只依赖网关变量表，与设备能力拉取互不依赖，同时开始
+    const variableErrors = validateGraphVariablesWithGateway(gateway, graph.nodes, options);
+    variableErrors.catch(() => undefined);
+    const response: Pick<DeviceListResponse, 'devList'> = { devList: dids.length > 0 ? await getDeviceListFor(gateway, dids) : {} };
     const specs = new Map<string, DeviceCapabilities>();
     const specErrors = new Map<string, unknown>();
     const errors: ValidationError[] = [];
@@ -283,7 +297,7 @@ export async function validateGraphCapabilitiesWithGateway(gateway: GatewayClien
         if (device?.urn && specs.has(device.urn)) devices.set(did, specs.get(device.urn)!);
     }
     const report = validateGraphCapabilities(graph.nodes, devices);
-    report.errors.push(...await validateGraphVariablesWithGateway(gateway, graph.nodes, options));
+    report.errors.push(...await variableErrors);
     report.errors.unshift(...errors);
     report.valid = report.errors.length === 0;
     return report;
