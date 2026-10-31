@@ -46,3 +46,6 @@ next-env.d.ts
 
 # OS
 Thumbs.db
+
+# Local rule files exported by scripts/rules.mjs (contain device IDs)
+rules/

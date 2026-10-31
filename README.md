@@ -129,7 +129,7 @@ Skill 提供节点类型模板、节点连接规则、关键校验规则、dtype
 
 #### MCP 工具列表
 
-共 28 个工具。`mijia_create_graph`、`mijia_patch_graph`、`mijia_update_graph` 和草稿工具构建节点时需要 `mijia-automation` Skill 支持。
+共 31 个工具。`mijia_create_graph`、`mijia_patch_graph`、`mijia_update_graph` 和草稿工具构建节点时需要 `mijia-automation` Skill 支持。读写已有规则推荐使用紧凑文本格式，见 [规则文本格式](docs/rule-text-format.md)。
 
 <details>
 <summary><b>展开完整工具列表</b></summary>
@@ -166,13 +166,13 @@ Skill 提供节点类型模板、节点连接规则、关键校验规则、dtype
       <td>一次扫描全部规则，找出引用指定设备的规则和节点，并列出残留引用</td>
     </tr>
     <tr>
-      <td rowspan="9">规则</td>
+      <td rowspan="12">规则</td>
       <td><code>mijia_get_graphs</code></td>
       <td>获取规则列表</td>
     </tr>
     <tr>
       <td><code>mijia_get_graph</code></td>
-      <td>获取规则详情（默认紧凑摘要，可按 <code>node_ids</code> 取指定节点；返回 <code>hash</code>）</td>
+      <td>获取规则详情（<code>format=text</code> 返回紧凑文本，<code>focus</code> 只看相关节点，<code>ifNoneMatch</code> 未变化时只回 hash；返回 <code>hash</code>）</td>
     </tr>
     <tr>
       <td><code>mijia_create_graph</code></td>
@@ -180,7 +180,19 @@ Skill 提供节点类型模板、节点连接规则、关键校验规则、dtype
     </tr>
     <tr>
       <td><code>mijia_patch_graph</code></td>
-      <td>增量修改：只发送变化的节点，<code>baseHash</code> 防止覆盖他人修改（修改首选）</td>
+      <td>增量修改（修改首选）：一次调用完成文本新增/替换、合并、删除、备注操作和建变量，写入前双重校验、写入后回读，只返回改动明细</td>
+    </tr>
+    <tr>
+      <td><code>mijia_put_graph_text</code></td>
+      <td>用一份完整紧凑文本替换规则，供本地规则文件同步脚本使用</td>
+    </tr>
+    <tr>
+      <td><code>mijia_query_rules</code></td>
+      <td>在服务端按变量、设备、节点类型跨规则查询，只返回命中的节点</td>
+    </tr>
+    <tr>
+      <td><code>mijia_get_log</code></td>
+      <td>读取执行日志并在服务端按规则、节点、时间过滤，可只返回各节点执行次数</td>
     </tr>
     <tr>
       <td><code>mijia_update_graph</code></td>
