@@ -274,6 +274,7 @@ export function registerGraphTools(
   - positions: {节点ID: {x, y, width?, height?}} 只改卡片位置（只写这几个字段）；只改位置也会保存
   - baseLayoutHash: 读取时的 layoutHash；卡片在此期间被别人挪动过时拒绝写入（与 baseHash 互相独立）
   - layout: 默认只给没有坐标的新卡片找空位（靠近上下游、不与任何卡片重叠），已有卡片不动；{mode:"full", pinned?:[...]} 全图重排
+  - verifyLayout: 写入后回读确认坐标已保存（多一次网关往返，默认不做）
   - dryRun: 只预览改动，不写入
 连线默认端口：写目标节点 ID 即可（delay/varGet 等自动用 input，deviceOutput/condition 用 trigger）；condition.condition、logicOr 的 inputN 等需写明端口。
 
@@ -307,6 +308,7 @@ export function registerGraphTools(
         positions: PositionsSchema.optional().describe("只改卡片位置"),
         baseLayoutHash: z.string().optional().describe("读取时的 layoutHash，用于拒绝覆盖他人挪动的位置"),
         layout: LayoutOptionsSchema.optional().describe("布局方式，默认只摆放新卡片"),
+        verifyLayout: z.boolean().optional().describe("写入后回读确认坐标已保存（多一次网关往返，默认不做）"),
         dryRun: z.boolean().optional().describe("只预览，不写入"),
         name: z.string().min(1).optional().describe("新规则名称"),
         enable: z.boolean().optional().describe("是否启用"),
@@ -318,7 +320,7 @@ export function registerGraphTools(
         openWorldHint: true,
       },
     },
-    async ({ id, baseHash, baseLayoutHash, add, replace, merge, removeIds, note, noteId, variables, upsert, positions, layout, dryRun, name, enable }) => {
+    async ({ id, baseHash, baseLayoutHash, add, replace, merge, removeIds, note, noteId, variables, upsert, positions, layout, verifyLayout, dryRun, name, enable }) => {
       try {
         gatewayManager.ensureConnected();
         for (const variable of variables || []) {
@@ -327,7 +329,7 @@ export function registerGraphTools(
         const hasNodeChange = Boolean(add || replace || merge?.length || removeIds?.length || note?.length || variables?.length || upsert?.length || (positions && Object.keys(positions).length) || layout?.mode === "full");
         if (hasNodeChange) {
           const result = await patchGraphV2(gatewayManager.gateway!, id, {
-            baseHash, baseLayoutHash, add, replace, merge, removeIds, note, noteId, upsert, positions, layout, dryRun,
+            baseHash, baseLayoutHash, add, replace, merge, removeIds, note, noteId, upsert, positions, layout, verifyLayout, dryRun,
             variables: variables as Array<{ id: string; scope: string; type: "number" | "string"; value: number | string; name?: string }> | undefined,
           });
           if (!result.success) return errorResult(new Error(result.error), "patch_graph");

@@ -105,7 +105,7 @@ test('#29 patchGraphV2 positions 只改位置并返回 moved 与 layoutHash；�
         n('b', 'delay', { output: [] }, { x: 800, y: 100, width: 528, height: 164 }),
     ]);
     const { gateway, writes } = fakeGateway(graph);
-    const ok = await patchGraphV2(gateway, graph.id, { baseLayoutHash: layoutHash(graph.nodes), positions: { b: { x: 800, y: 500 } } });
+    const ok = await patchGraphV2(gateway, graph.id, { baseLayoutHash: layoutHash(graph.nodes), positions: { b: { x: 800, y: 500 } }, verifyLayout: true });
     assert.equal(ok.success, true, ok.success ? '' : ok.error);
     assert.deepEqual(ok.data!.moved, ['b']);
     assert.deepEqual(ok.data!.changed, []);

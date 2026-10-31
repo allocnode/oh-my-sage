@@ -532,8 +532,11 @@ function routePoints(from: Box, fromIndex: number, fromCount: number, to: Box, t
     return points;
 }
 
+function cross(p: [number, number], q: [number, number], r: [number, number]): number {
+    return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+}
+
 function segmentsCross(a: [number, number], b: [number, number], c: [number, number], d: [number, number]): boolean {
-    const cross = (p: [number, number], q: [number, number], r: [number, number]) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
     const d1 = cross(c, d, a), d2 = cross(c, d, b), d3 = cross(a, b, c), d4 = cross(a, b, d);
     return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
 }
@@ -560,29 +563,41 @@ export function layoutReport(nodes: GraphNode[]): LayoutReport {
         const from = nodeById.get(edge.from)!, to = nodeById.get(edge.to)!;
         const outPorts = Object.keys(from.outputs || {});
         const inPorts = Object.keys(to.inputs || {});
-        return {
-            edge,
-            points: routePoints(boxes.get(edge.from)!, Math.max(0, outPorts.indexOf(edge.fromPort)), Math.max(1, outPorts.length), boxes.get(edge.to)!, Math.max(0, inPorts.indexOf(edge.toPort)), Math.max(1, inPorts.length)),
-        };
+        const points = routePoints(boxes.get(edge.from)!, Math.max(0, outPorts.indexOf(edge.fromPort)), Math.max(1, outPorts.length), boxes.get(edge.to)!, Math.max(0, inPorts.indexOf(edge.toPort)), Math.max(1, inPorts.length));
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const [x, y] of points) { if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+        return { edge, points, minX, minY, maxX, maxY };
     });
+    // 先用包围盒排除不可能相交的组合，再逐段检查（大规则上把检查耗时从数百毫秒降到几毫秒）
+    const cards = [...boxes].map(([id, box]) => ({ id, x: box.x + 4, y: box.y + 4, width: box.width - 8, height: box.height - 8 }));
     const edgesThroughCards: LayoutReport['edgesThroughCards'] = [];
     for (const route of routes) {
-        const cards: string[] = [];
-        for (const [id, box] of boxes) {
-            if (id === route.edge.from || id === route.edge.to) continue;
-            const inner = { x: box.x + 4, y: box.y + 4, width: box.width - 8, height: box.height - 8 };
-            if (route.points.some((point, index) => index > 0 && segmentHitsBox(route.points[index - 1][0], route.points[index - 1][1], point[0], point[1], inner))) cards.push(id);
+        const hitCards: string[] = [];
+        const { points } = route;
+        for (const card of cards) {
+            if (card.id === route.edge.from || card.id === route.edge.to) continue;
+            if (route.maxX < card.x || route.minX > card.x + card.width || route.maxY < card.y || route.minY > card.y + card.height) continue;
+            for (let index = 1; index < points.length; index++) {
+                if (segmentHitsBox(points[index - 1][0], points[index - 1][1], points[index][0], points[index][1], card)) { hitCards.push(card.id); break; }
+            }
         }
-        if (cards.length) edgesThroughCards.push({ from: route.edge.from, to: route.edge.to, cards });
+        if (hitCards.length) edgesThroughCards.push({ from: route.edge.from, to: route.edge.to, cards: hitCards });
     }
     let crossings = 0;
     for (let i = 0; i < routes.length; i++) {
+        const a = routes[i];
         for (let j = i + 1; j < routes.length; j++) {
-            const a = routes[i], b = routes[j];
+            const b = routes[j];
+            if (a.maxX < b.minX || b.maxX < a.minX || a.maxY < b.minY || b.maxY < a.minY) continue;
             if (a.edge.from === b.edge.from || a.edge.to === b.edge.to || a.edge.from === b.edge.to || a.edge.to === b.edge.from) continue;
             let hit = false;
-            for (let p = 1; p < a.points.length && !hit; p++) for (let q = 1; q < b.points.length && !hit; q++) {
-                if (segmentsCross(a.points[p - 1], a.points[p], b.points[q - 1], b.points[q])) hit = true;
+            for (let p = 1; p < a.points.length && !hit; p++) {
+                const a1 = a.points[p - 1], a2 = a.points[p];
+                const sx0 = Math.min(a1[0], a2[0]), sx1 = Math.max(a1[0], a2[0]), sy0 = Math.min(a1[1], a2[1]), sy1 = Math.max(a1[1], a2[1]);
+                if (sx1 < b.minX || sx0 > b.maxX || sy1 < b.minY || sy0 > b.maxY) continue;
+                for (let q = 1; q < b.points.length; q++) {
+                    if (segmentsCross(a1, a2, b.points[q - 1], b.points[q])) { hit = true; break; }
+                }
             }
             if (hit) crossings++;
         }

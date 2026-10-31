@@ -179,7 +179,7 @@ export interface LayoutSummary {
     edgesThroughCards: number;
     crossings: number;
     regions: number;
-    /** 回读确认网关保存的坐标与写入一致（只在本次摆放或移动了卡片时检查）；不代表原生网页显示已验证 */
+    /** verifyLayout=true 时回读确认网关保存的坐标与写入一致；不代表原生网页显示已验证 */
     savedPositionsVerified?: boolean;
     note: string;
 }
@@ -309,7 +309,7 @@ async function commitNodes(
     existing: Graph,
     nextNodes: GraphNode[],
     variables: RuleTextVariable[],
-    options: { dryRun?: boolean; returnText?: boolean; ctx: RuleTextContext; layout?: LayoutOptions }
+    options: { dryRun?: boolean; returnText?: boolean; ctx: RuleTextContext; layout?: LayoutOptions; verifyLayout?: boolean }
 ): Promise<ToolResponse<GraphChangeReport>> {
     const id = existing.id;
     const before = existing.nodes || [];
@@ -356,9 +356,9 @@ async function commitNodes(
         finalNodes = written.data?.nodes || nodes;
     }
     invalidateGraph(gateway, id);
-    // 本次摆放或移动了卡片时回读一次，确认网关保存的坐标与写入一致
+    // verifyLayout=true 时回读一次，确认网关保存的坐标与写入一致（多一次网关往返，默认不做；写入成功即已保存）
     let layoutVerified: boolean | undefined;
-    if (touched.size > 0 && (logicChanged || moved.length > 0)) {
+    if (options.verifyLayout && touched.size > 0 && (logicChanged || moved.length > 0)) {
         const reread = await getGraph(gateway, id);
         if (reread.success) {
             const saved = new Map((reread.data!.nodes || []).map((node) => [node.id, positionKey(node)]));
@@ -399,7 +399,7 @@ function staleError(existing: Graph, input: { baseHash?: string; baseLayoutHash?
 export async function putGraphText(
     gateway: GatewayClient,
     id: string,
-    input: { text: string; baseHash?: string; baseLayoutHash?: string; dryRun?: boolean; layout?: LayoutOptions }
+    input: { text: string; baseHash?: string; baseLayoutHash?: string; dryRun?: boolean; layout?: LayoutOptions; verifyLayout?: boolean }
 ): Promise<ToolResponse<GraphChangeReport>> {
     try {
         const loaded = await loadGraphAndDevices(gateway, id);
@@ -409,7 +409,7 @@ export async function putGraphText(
         if (stale) return { success: false, error: stale };
         const ctx = await buildTextContext(gateway, id, existing.nodes, input.text, await devListFor(gateway, loaded.devList, existing.nodes, input.text));
         const parsed = textToNodes(input.text, ctx);
-        return await commitNodes(gateway, existing, parsed.nodes, parsed.variables, { dryRun: input.dryRun, returnText: true, ctx, layout: input.layout });
+        return await commitNodes(gateway, existing, parsed.nodes, parsed.variables, { dryRun: input.dryRun, returnText: true, ctx, layout: input.layout, verifyLayout: input.verifyLayout });
     } catch (error) {
         return { success: false, error: `写入规则文本失败: ${error instanceof Error ? error.message : error}` };
     }
@@ -432,6 +432,8 @@ export interface PatchV2Input extends GraphPatch {
     positions?: Record<string, { x: number; y: number; width?: number; height?: number }>;
     /** 布局方式：默认只摆放没有坐标的卡片；mode=full 全图重排（pinned 不动） */
     layout?: LayoutOptions;
+    /** 写入后回读确认坐标（多一次网关往返） */
+    verifyLayout?: boolean;
     dryRun?: boolean;
 }
 
@@ -508,7 +510,7 @@ export async function patchGraphV2(gateway: GatewayClient, id: string, input: Pa
         if (positioned.error) return { success: false, error: positioned.error };
         nodes = positioned.nodes;
 
-        return await commitNodes(gateway, existing, nodes, variables, { dryRun: input.dryRun, ctx, layout: input.layout });
+        return await commitNodes(gateway, existing, nodes, variables, { dryRun: input.dryRun, ctx, layout: input.layout, verifyLayout: input.verifyLayout });
     } catch (error) {
         return { success: false, error: `修改规则失败: ${error instanceof Error ? error.message : error}` };
     }

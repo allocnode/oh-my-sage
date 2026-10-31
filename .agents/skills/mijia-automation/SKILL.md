@@ -212,7 +212,7 @@ MCP 模式下**创建**超过 10 个节点的复杂规则时，不要调用两�
    - `layout`：默认只给新卡片找空位；整理乱掉的规则用 `{mode:"full"}` 全图重排，`pinned` 指定不动的卡片。
    - `baseHash` 必传；挪卡片或重排时同时传 `baseLayoutHash`（读取时返回的 `layoutHash`），防止覆盖别人在 App 里挪过的位置。`dryRun:true` 只预览。
 4. **不必再单独校验和回读**：写入前已做结构与设备能力两项校验；返回值里的 `diff` 就是改动节点写入后的文本。
-5. **交付前看布局**：返回值的 `layout` 列出重叠、可能重叠、穿卡连线数和交叉估计；本次摆放或移动了卡片时还会回读确认坐标已保存（`savedPositionsVerified`）。有问题先修再交付，修不了就如实报告。也可随时用只读的 `mijia_check_layout {id}` 检查，或带上 `positions` / `layout` 预览效果。穿卡和交叉是估计值，不代表原生网页实际显示，只用来判断是否好维护。保存会整条重写规则，网关可能重新加载规则，进行中的延时不保证延续，挪卡片也一样。
+5. **交付前看布局**：返回值的 `layout` 列出重叠、可能重叠、穿卡连线数和交叉估计；需要确认坐标确实存进网关时传 `verifyLayout:true`（多一次网关往返），结果在 `savedPositionsVerified`。有问题先修再交付，修不了就如实报告。也可随时用只读的 `mijia_check_layout {id}` 检查，或带上 `positions` / `layout` 预览效果。穿卡和交叉是估计值，不代表原生网页实际显示，只用来判断是否好维护。保存会整条重写规则，网关可能重新加载规则，进行中的延时不保证延续，挪卡片也一样。
 6. **改动很大**：用 `scripts/rules.mjs pull` 把规则拉成本地文件，用普通文件编辑只改需要的行，再 `push`（服务端为 `mijia_put_graph_text`）。
 7. **看执行情况**：`mijia_get_log {graph, minutes}`；先用 `summary:true` 看各节点执行次数，找出执行链断在哪一步。
 8. `mijia_update_graph` 是整图替换，仅兼容保留。Web Agent 没有这些工具，继续使用 update_graph。
