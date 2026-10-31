@@ -4,6 +4,7 @@
  */
 
 import type { Graph, GraphNode, ValidationError } from '../types/graph';
+import { arrangeNodes } from './layout';
 
 const STATE_NODE_TYPES = new Set([
     'timeRange', 'alarmClock', 'onLoad', 'deviceInputSetVar', 'varChange',
@@ -259,140 +260,11 @@ export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, in
     return results;
 }
 
+/**
+ * 兼容入口：为没有坐标的卡片原地写入坐标，已有坐标的卡片不动。
+ * 布局算法见 layout.ts（按尺寸分层、增量避让、碰撞复检）。
+ */
 export function layoutNodes(nodes: GraphNode[]): void {
-    const NODE_WIDTH = 528;
-    const NODE_HEIGHT = 164;
-    const H_SPACING = 150;
-    const V_SPACING = 80;
-    const START_X = 100;
-    const START_Y = 100;
-    const NOTE_DEFAULT_HEIGHT = 400;
-
-    // Keep annotations out of flow levels and place new notes above the flow.
-    const noteNodes = nodes.filter((node) => ANNOTATION_NODE_TYPES.has(node.type));
-    const flowNodes = nodes.filter((node) => !ANNOTATION_NODE_TYPES.has(node.type));
-
-    const nodeMap = new Map<string, GraphNode>();
-    for (const node of flowNodes) {
-        nodeMap.set(node.id, node);
-    }
-
-    const children = new Map<string, string[]>();
-    const inDegree = new Map<string, number>();
-    const parentOf = new Map<string, string>();
-
-    for (const node of flowNodes) {
-        children.set(node.id, []);
-        inDegree.set(node.id, 0);
-    }
-
-    for (const node of flowNodes) {
-        const outputs = node.outputs || {};
-        for (const [, targets] of Object.entries(outputs)) {
-            if (!Array.isArray(targets)) continue;
-            for (const target of targets) {
-                if (typeof target !== 'string') continue;
-                const targetId = target.split('.')[0];
-                if (nodeMap.has(targetId)) {
-                    children.get(node.id)!.push(targetId);
-                    inDegree.set(targetId, (inDegree.get(targetId) || 0) + 1);
-                    parentOf.set(targetId, node.id);
-                }
-            }
-        }
-    }
-
-    const levels = new Map<string, number>();
-    const queue: string[] = [];
-
-    for (const node of flowNodes) {
-        if (inDegree.get(node.id) === 0) {
-            queue.push(node.id);
-            levels.set(node.id, 0);
-        }
-    }
-
-    while (queue.length > 0) {
-        const current = queue.shift()!;
-        const currentLevel = levels.get(current)!;
-        for (const child of children.get(current) || []) {
-            const childLevel = levels.get(child);
-            if (childLevel === undefined || childLevel < currentLevel + 1) {
-                levels.set(child, currentLevel + 1);
-            }
-            inDegree.set(child, inDegree.get(child)! - 1);
-            if (inDegree.get(child) === 0) {
-                queue.push(child);
-            }
-        }
-    }
-
-    for (const node of flowNodes) {
-        if (!levels.has(node.id)) {
-            levels.set(node.id, 0);
-        }
-    }
-
-    const levelGroups = new Map<number, string[]>();
-    for (const [nodeId, level] of levels) {
-        if (!levelGroups.has(level)) {
-            levelGroups.set(level, []);
-        }
-        levelGroups.get(level)!.push(nodeId);
-    }
-
-    const positions = new Map<string, { x: number; y: number }>();
-
-    for (const [level, nodeIds] of levelGroups) {
-        nodeIds.sort((a, b) => {
-            const parentA = parentOf.get(a);
-            const parentB = parentOf.get(b);
-            if (parentA === parentB) return 0;
-            if (!parentA) return -1;
-            if (!parentB) return 1;
-            return nodeIds.indexOf(parentA) - nodeIds.indexOf(parentB);
-        });
-
-        const x = START_X + level * (NODE_WIDTH + H_SPACING);
-        const totalHeight = nodeIds.length * (NODE_HEIGHT + V_SPACING) - V_SPACING;
-        const startY = START_Y + ((levelGroups.get(0)?.length || 1) * (NODE_HEIGHT + V_SPACING) - totalHeight) / 2;
-
-        for (let i = 0; i < nodeIds.length; i++) {
-            const y = startY + i * (NODE_HEIGHT + V_SPACING);
-            positions.set(nodeIds[i], { x, y });
-        }
-    }
-
-    // updateGraph restores existing flow positions after this call.
-    let noteBottom = START_Y;
-    for (const node of nodes) {
-        const existingY = (node.cfg?.pos as { y?: unknown } | undefined)?.y;
-        if (typeof existingY === 'number' && Number.isFinite(existingY)) noteBottom = Math.min(noteBottom, existingY);
-    }
-    for (const pos of positions.values()) noteBottom = Math.min(noteBottom, pos.y);
-
-    for (const node of flowNodes) {
-        const pos = positions.get(node.id);
-        if (pos) {
-            node.cfg = node.cfg || {};
-            (node.cfg as Record<string, unknown>).pos = {
-                x: Math.round(pos.x),
-                y: Math.round(pos.y),
-                width: NODE_WIDTH,
-                height: NODE_HEIGHT,
-            };
-        }
-    }
-
-    for (const node of noteNodes) {
-        node.cfg = node.cfg || {};
-        if (node.cfg.pos) continue;
-        noteBottom -= V_SPACING + NOTE_DEFAULT_HEIGHT;
-        node.cfg.pos = {
-            x: START_X,
-            y: noteBottom,
-            width: NODE_WIDTH,
-            height: NOTE_DEFAULT_HEIGHT,
-        };
-    }
+    const arranged = arrangeNodes(nodes);
+    arranged.nodes.forEach((node, index) => { nodes[index].cfg = node.cfg; });
 }

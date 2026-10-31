@@ -22,6 +22,9 @@ import {
   graphHash,
   buildTextContext,
   textToNodes,
+  arrangeNodes,
+  layoutHash,
+  positionChangedIds,
 } from "../../core/index.js";
 import type { Graph, GraphNode } from "../../core/index.js";
 import {
@@ -59,6 +62,18 @@ const GraphMergeSchema = z.object({
 });
 
 const GRAPH_FULL_HINT = "请改用 detail=summary，或用 node_ids 只取需要的节点";
+
+const PositionsSchema = z.record(z.object({
+  x: z.number(),
+  y: z.number(),
+  width: z.number().positive().optional(),
+  height: z.number().positive().optional(),
+}));
+
+const LayoutOptionsSchema = z.object({
+  mode: z.enum(["incremental", "full"]).optional().describe("incremental（默认）只摆放没有坐标的卡片；full 全图重排"),
+  pinned: z.array(z.string()).optional().describe("full 模式下保持不动的节点"),
+});
 const VALIDATE_HINT = "错误过多，请先修复前面的错误后重新校验";
 
 /** 缺少 cfg 时补一个默认 cfg，便于只传 {id, nodes} 校验 */
@@ -256,10 +271,15 @@ export function registerGraphTools(
   - note: 备注操作数组，按顺序执行：{section, append} 在某段末尾加一条；{replace, with} 替换恰好出现一次的原文；{changelog} 在「变更」段最前加一条；{set} 整体替换为 Markdown。缺省改第一个备注节点（noteId 可指定），没有备注时新建
   - variables: [{id, scope, type, value, name?}] 需要的变量，不存在才创建；scope 写 "rule" 表示本规则
   - upsert: 完整 JSON 节点（兼容旧用法）
+  - positions: {节点ID: {x, y, width?, height?}} 只改卡片位置（只写这几个字段）；只改位置也会保存
+  - baseLayoutHash: 读取时的 layoutHash；卡片在此期间被别人挪动过时拒绝写入（与 baseHash 互相独立）
+  - layout: 默认只给没有坐标的新卡片找空位（靠近上下游、不与任何卡片重叠），已有卡片不动；{mode:"full", pinned?:[...]} 全图重排
   - dryRun: 只预览改动，不写入
-连线默认端口：写目标节点 ID 即可（delay/varGet 等自动用 input，deviceOutput/condition 用 trigger）；condition.condition、logicOr 的 inputN 等需写明端口。卡片坐标自动保留，新节点自动布局。
+连线默认端口：写目标节点 ID 即可（delay/varGet 等自动用 input，deviceOutput/condition 用 trigger）；condition.condition、logicOr 的 inputN 等需写明端口。
 
-返回：{graphId, hash, added, changed, removed, noteChanged, createdVariables, diff（改动节点的文本）, message}。写入前已完成两项校验，无需再单独调用校验工具。`,
+本次摆放或移动的卡片与任何卡片重叠时拒绝写入。保存会整条重写规则，网关可能重新加载规则，进行中的延时不保证延续。
+
+返回：{graphId, hash, layoutHash, added, changed, removed, moved, placed, noteChanged, createdVariables, diff（改动节点的文本）, layout（重叠/可能重叠/穿卡连线/交叉估计）, message}。写入前已完成两项校验，无需再单独调用校验工具。`,
       inputSchema: z.object({
         id: z.string().describe("规则ID"),
         baseHash: z.string().optional().describe("mijia_get_graph 返回的 hash，用于拒绝过期修改"),
@@ -284,6 +304,9 @@ export function registerGraphTools(
           name: z.string().optional(),
         })).optional().describe("需要的变量；不存在时创建"),
         upsert: z.array(GraphNodeSchema).optional().describe("新增或整体替换的完整 JSON 节点（兼容）"),
+        positions: PositionsSchema.optional().describe("只改卡片位置"),
+        baseLayoutHash: z.string().optional().describe("读取时的 layoutHash，用于拒绝覆盖他人挪动的位置"),
+        layout: LayoutOptionsSchema.optional().describe("布局方式，默认只摆放新卡片"),
         dryRun: z.boolean().optional().describe("只预览，不写入"),
         name: z.string().min(1).optional().describe("新规则名称"),
         enable: z.boolean().optional().describe("是否启用"),
@@ -295,16 +318,16 @@ export function registerGraphTools(
         openWorldHint: true,
       },
     },
-    async ({ id, baseHash, add, replace, merge, removeIds, note, noteId, variables, upsert, dryRun, name, enable }) => {
+    async ({ id, baseHash, baseLayoutHash, add, replace, merge, removeIds, note, noteId, variables, upsert, positions, layout, dryRun, name, enable }) => {
       try {
         gatewayManager.ensureConnected();
         for (const variable of variables || []) {
           if (typeof variable.value !== variable.type) return textResult(`Error: 变量 ${variable.id} 的初始值类型必须是 ${variable.type} (patch_graph)`, undefined, true);
         }
-        const hasNodeChange = Boolean(add || replace || merge?.length || removeIds?.length || note?.length || variables?.length || upsert?.length);
+        const hasNodeChange = Boolean(add || replace || merge?.length || removeIds?.length || note?.length || variables?.length || upsert?.length || (positions && Object.keys(positions).length) || layout?.mode === "full");
         if (hasNodeChange) {
           const result = await patchGraphV2(gatewayManager.gateway!, id, {
-            baseHash, add, replace, merge, removeIds, note, noteId, upsert, dryRun,
+            baseHash, baseLayoutHash, add, replace, merge, removeIds, note, noteId, upsert, positions, layout, dryRun,
             variables: variables as Array<{ id: string; scope: string; type: "number" | "string"; value: number | string; name?: string }> | undefined,
           });
           if (!result.success) return errorResult(new Error(result.error), "patch_graph");
@@ -331,19 +354,21 @@ export function registerGraphTools(
       title: "用紧凑文本替换规则",
       description: `用一份完整的紧凑文本（mijia_get_graph format=text 的格式）替换规则内容，是「规则文件」工作流的服务端：本地 .rule 文件改完后由 scripts/rules.mjs push 调用。
 
-服务端解析文本、按差异计算新增/修改/删除、创建 var 声明的变量、执行结构与能力校验、保留卡片坐标后写入并回读，返回改动明细和写入后的规范文本。必须传 baseHash，网关上的规则在此期间被改过时拒绝写入。dryRun=true 只预览。`,
+服务端解析文本、按差异计算新增/修改/删除、创建 var 声明的变量、执行结构与能力校验、保留卡片坐标并给新卡片找空位后写入，返回改动明细、布局检查和写入后的规范文本。必须传 baseHash，网关上的规则在此期间被改过时拒绝写入。dryRun=true 只预览。`,
       inputSchema: z.object({
         id: z.string().describe("规则ID"),
         baseHash: z.string().describe("拉取文本时的 hash"),
+        baseLayoutHash: z.string().optional().describe("拉取文本时的 layoutHash"),
         text: z.string().describe("完整紧凑文本"),
+        layout: LayoutOptionsSchema.optional().describe("布局方式，默认只摆放新卡片"),
         dryRun: z.boolean().optional().describe("只预览，不写入"),
       }),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
     },
-    async ({ id, baseHash, text, dryRun }) => {
+    async ({ id, baseHash, baseLayoutHash, text, layout, dryRun }) => {
       try {
         gatewayManager.ensureConnected();
-        const result = await putGraphText(gatewayManager.gateway!, id, { text, baseHash, dryRun });
+        const result = await putGraphText(gatewayManager.gateway!, id, { text, baseHash, baseLayoutHash, layout, dryRun });
         if (!result.success) return errorResult(new Error(result.error), "put_graph_text");
         return jsonResult({ ...result.data! });
       } catch (error) {
@@ -795,6 +820,70 @@ export function registerGraphTools(
         return jsonResult(output, { hint: VALIDATE_HINT });
       } catch (error) {
         return errorResult(error, "validate_graph");
+      }
+    }
+  );
+
+  // ==================== mijia_check_layout ====================
+  server.registerTool(
+    "mijia_check_layout",
+    {
+      title: "检查规则卡片布局",
+      description: `只读检查规则的卡片布局，不写入网关。可检查已保存的规则（id），也可预览一次修改后的布局（id + positions，或 id + layout）。
+
+返回：
+  - overlaps: 按已保存尺寸确定重叠的卡片对
+  - possibleOverlaps: 按类型尺寸上限（原生画布可能把卡片画得更大）可能重叠或间距不足 24 像素的卡片对
+  - edgesThroughCards: 估计穿过无关卡片的连线
+  - crossings: 估计的连线交叉数；backEdges: 向左回连的连线数（回路，正常）
+  - regions: 互不相连的分区及其范围
+  - placed / moved: 预览时会被摆放或移动的卡片
+  - layoutHash: 卡片位置哈希，挪卡片时传给 mijia_patch_graph 的 baseLayoutHash
+连线按水平贝塞尔曲线近似，穿卡和交叉为估计值，不代表原生网页实际显示；这些指标只用于判断是否便于维护，不是规则逻辑错误。`,
+      inputSchema: z.object({
+        id: z.string().describe("规则ID"),
+        positions: PositionsSchema.optional().describe("预览这些位置修改"),
+        layout: LayoutOptionsSchema.optional().describe("预览布局方式，如 {mode:'full'}"),
+        limit: z.number().int().min(1).max(200).optional().default(30).describe("每类问题最多列出几条"),
+      }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ id, positions, layout, limit = 30 }) => {
+      try {
+        gatewayManager.ensureConnected();
+        const loaded = await loadGraph(id);
+        if (!loaded.graph) return errorResult(new Error(loaded.error), "check_layout");
+        let nodes = loaded.graph.nodes;
+        if (positions) {
+          for (const nodeId of Object.keys(positions)) {
+            if (!nodes.some((node) => node.id === nodeId)) return textResult(`Error: positions 中的节点 ${nodeId} 不存在 (check_layout)`, undefined, true);
+          }
+          nodes = nodes.map((node) => positions[node.id]
+            ? { ...node, cfg: { ...node.cfg, pos: { ...((node.cfg as Record<string, unknown>).pos as object || {}), ...positions[node.id] } } }
+            : node);
+        }
+        const arranged = arrangeNodes(nodes, layout);
+        const report = arranged.report;
+        return jsonResult({
+          id,
+          layoutHash: layoutHash(arranged.nodes),
+          nodeCount: report.nodeCount,
+          placed: arranged.placedIds,
+          moved: positionChangedIds(loaded.graph.nodes, arranged.nodes),
+          overlaps: report.overlaps.slice(0, limit),
+          overlapCount: report.overlaps.length,
+          possibleOverlaps: report.possibleOverlaps.slice(0, limit),
+          possibleOverlapCount: report.possibleOverlaps.length,
+          edgesThroughCards: report.edgesThroughCards.slice(0, limit),
+          edgesThroughCardCount: report.edgesThroughCards.length,
+          crossings: report.crossings,
+          backEdges: report.backEdges,
+          regions: report.regions.map((region) => ({ count: region.ids.length, first: region.ids[0], box: region.box })),
+          missingPositions: report.missingPositions,
+          model: report.model,
+        });
+      } catch (error) {
+        return errorResult(error, "check_layout");
       }
     }
   );

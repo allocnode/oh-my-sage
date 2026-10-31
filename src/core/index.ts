@@ -13,7 +13,7 @@ export { getDevices, getDevice, fetchMiotSpec, clearMiotSpecCache } from './tool
 export { getGraphs, getGraph, createGraph, updateGraph, deleteGraph, toggleGraph, findDeviceUsage } from './tools/graph';
 export { graphHash, summarizeGraph, applyGraphPatch, patchGraph, validateGraphById } from './tools/graphEdit';
 export type { GraphCompactSummary, GraphNodeSummary, GraphPatch } from './tools/graphEdit';
-export { getGraphText, putGraphText, patchGraphV2, queryRules, getGraphLog, parseGatewayLog, buildTextContext, focusIds } from './tools/graphText';
+export { getGraphText, putGraphText, patchGraphV2, queryRules, getGraphLog, parseGatewayLog, buildTextContext, focusIds, summarizeLayout } from './tools/graphText';
 export type { GraphTextResult, GraphChangeReport, PatchV2Input, RuleQuery, RuleQueryHit, LogQuery } from './tools/graphText';
 export { nodesToText, textToNodes, nodeLines, sameNode } from './tools/ruleText';
 export type { RuleTextContext, RuleTextVariable, ParsedRuleText } from './tools/ruleText';
@@ -24,6 +24,9 @@ export { callGatewayApi, READ_ONLY_GATEWAY_METHODS } from './tools/misc';
 export { validateGraphCapabilitiesWithGateway, validateGraphVariablesWithGateway } from './tools/capabilityValidation';
 export type { CapabilityValidationReport, VariableValidationOptions } from './tools/capabilityValidation';
 export { validateGraph, layoutNodes, mapLimit } from './tools/base';
+export { arrangeNodes, layoutReport, estimateSize } from './tools/layout';
+export type { LayoutOptions, LayoutReport, LayoutResult } from './tools/layout';
+export { layoutHash, positionChangedIds } from './tools/graphHash';
 
 // 类型
 export type {

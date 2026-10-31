@@ -6,7 +6,7 @@ import { z } from "zod";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { DeviceInfo, MiotActionCapability, MiotEventCapability, MiotPropertyCapability, MiotValueListItem, MiotValueRange } from "../core/types/device.js";
 import type { Graph, GraphNode } from "../core/types/graph.js";
-import { summarizeGraph, graphHash } from "../core/index.js";
+import { summarizeGraph, graphHash, layoutHash } from "../core/index.js";
 
 // 响应格式枚举
 export const ResponseFormatSchema = z.enum(["markdown", "json"]);
@@ -469,7 +469,7 @@ export function shapeGraphOutput(graph: Graph, options: { detail?: "summary" | "
       ...(missingIds.length > 0 ? { missingIds } : {}),
     };
   }
-  if (options.detail === "full") return { hash: graphHash(nodes), graph };
+  if (options.detail === "full") return { hash: graphHash(nodes), layoutHash: layoutHash(nodes), graph };
   return { ...summarizeGraph({ ...graph, nodes }) };
 }
 
