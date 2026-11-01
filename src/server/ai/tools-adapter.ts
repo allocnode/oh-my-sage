@@ -7,8 +7,47 @@ import {z} from 'zod';
 import {tool} from 'ai';
 import {jsonSchema, type Schema, zodSchema} from '@ai-sdk/ui-utils';
 import {GatewayClient} from '@/core';
-import {callGatewayApi, getDevices, getDevice, getGraphs, getGraph, createGraph, updateGraph, deleteGraph, toggleGraph, getVariables, setVariable, createVariable, deleteVariable, getVariableValue, getVariableConfig, validateGraph, validateGraphCapabilitiesWithGateway, layoutNodes} from '@/core';
+import {callGatewayApi, getDevices, getDevice, getGraphs, getGraph, createGraph, updateGraph, deleteGraph, toggleGraph, getVariables, setVariable, createVariable, deleteVariable, getVariableValue, getVariableConfig, validateGraph, validateGraphCapabilitiesWithGateway, getGraphText, patchGraphV2, putGraphText, queryRules, getGraphLog, checkGraphLayout, graphHash} from '@/core';
 import {getSkillByName, formatSkillContent, readSkillFile, getSkillCatalog} from '../skills/loader';
+
+// ==================== 规则修改参数 ====================
+
+const positionsSchema = z.record(z.object({
+    x: z.number(),
+    y: z.number(),
+    width: z.number().positive().optional(),
+    height: z.number().positive().optional(),
+}));
+
+const layoutOptionsSchema = z.object({
+    mode: z.enum(['incremental', 'full']).optional().describe('incremental（默认）只摆放没有坐标的卡片；full 全图重排'),
+    pinned: z.array(z.string()).optional().describe('full 模式下保持不动的节点'),
+});
+
+const mergeSchema = z.object({
+    id: z.string().min(1).describe('要局部修改的节点 ID'),
+    props: z.record(z.unknown()).optional().describe('浅合并到 props；值为 null 删除该键'),
+    cfg: z.record(z.unknown()).optional().describe('浅合并到 cfg；值为 null 删除该键'),
+    outputs: z.record(z.array(z.string())).optional().describe('按端口整体替换 outputs'),
+    inputs: z.record(z.unknown()).optional().describe('浅合并到 inputs；值为 null 删除该键'),
+});
+
+const noteOperationSchema = z.object({
+    section: z.string().optional(),
+    append: z.string().optional(),
+    replace: z.string().optional(),
+    with: z.string().optional(),
+    changelog: z.string().optional(),
+    set: z.string().optional(),
+});
+
+const patchVariableSchema = z.object({
+    id: z.string().regex(/^[a-zA-Z0-9]+$/),
+    scope: z.string().default('rule'),
+    type: z.enum(['number', 'string']),
+    value: z.union([z.number(), z.string()]),
+    name: z.string().optional(),
+});
 
 function patchArrayItems(schema: unknown): unknown {
     if (Array.isArray(schema)) {
@@ -130,13 +169,123 @@ export function createCoreTools(gateway: GatewayClient) {
         }),
 
         get_graph: defineTool({
-            description: '获取指定规则的详细信息',
+            description: '获取指定规则。修改已有规则前用 format="text" 读紧凑文本（一行一个节点，备注为 Markdown，附 hash 和 layoutHash），大规则用 focus 只看相关节点；不传 format 时返回完整 JSON。',
             parameters: z.object({
                 id: z.string().describe('规则ID'),
+                format: z.enum(['json', 'text']).optional().describe('text=紧凑文本（推荐），json=完整规则（默认）'),
+                focus: z.array(z.string()).optional().describe('只看这些节点及其上下游（自动使用文本格式）'),
+                depth: z.number().int().min(0).max(5).optional().describe('focus 的上下游步数，默认 1'),
+                ifNoneMatch: z.string().optional().describe('已知 hash；规则未变化时只返回 unchanged'),
             }),
-            execute: async ({id}) => {
+            execute: async ({id, format, focus, depth = 1, ifNoneMatch}) => {
+                const wantText = format === 'text' || (focus !== undefined && focus.length > 0);
+                if (ifNoneMatch) {
+                    const current = await getGraph(gateway, id);
+                    if (!current.success) return current;
+                    const hash = graphHash(current.data!.nodes || []);
+                    if (hash === ifNoneMatch) return {success: true, data: {id, unchanged: true, hash}};
+                    if (!wantText) return current;
+                }
+                if (wantText) return getGraphText(gateway, id, {focus, depth});
                 return getGraph(gateway, id);
             },
+        }),
+
+        patch_graph: defineTool({
+            description: `修改已有规则的首选方式：一次调用完成建变量、改节点、改备注、结构与能力校验和写入。先用 get_graph({id, format:"text"}) 拿到 hash。
+- add: 新增节点（紧凑文本，可多行，可含 var 声明和 @tts/@pulse 宏）；ID 已存在时拒绝
+- replace: 整行替换已有节点（紧凑文本）；ID 不存在时拒绝
+- merge: 只改个别字段或连线（outputs 按端口整体替换）；removeIds: 删除节点并清理连线
+- note: 备注操作 {section, append} / {replace, with} / {changelog} / {set}
+- variables: 需要的变量，不存在才创建；scope 写 "rule" 表示本规则
+- positions: {节点ID: {x, y}} 只挪卡片；layout: 默认只给新卡片找空位，{mode:"full"} 全图重排
+- baseHash 必传；挪卡片或重排时同时传 baseLayoutHash；dryRun:true 只预览
+本次摆放或移动的卡片与任何卡片重叠时拒绝写入。返回改动明细、diff（改动节点的文本）和布局检查摘要，无需再单独校验。`,
+            parameters: z.object({
+                id: z.string().describe('规则ID'),
+                baseHash: z.string().optional().describe('get_graph 返回的 hash，规则已被他人修改时拒绝写入'),
+                baseLayoutHash: z.string().optional().describe('get_graph 返回的 layoutHash，卡片被别人挪动过时拒绝写入'),
+                add: z.string().optional().describe('新增节点的紧凑文本'),
+                replace: z.string().optional().describe('替换已有节点的紧凑文本'),
+                merge: z.array(mergeSchema).optional().describe('局部合并的节点字段'),
+                removeIds: z.array(z.string()).optional().describe('要删除的节点 ID'),
+                note: z.array(noteOperationSchema).optional().describe('备注操作'),
+                noteId: z.string().optional().describe('要修改的备注节点 ID，缺省为第一个备注'),
+                variables: z.array(patchVariableSchema).optional().describe('需要的变量；不存在时创建'),
+                positions: positionsSchema.optional().describe('只改卡片位置'),
+                layout: layoutOptionsSchema.optional().describe('布局方式，默认只摆放新卡片'),
+                verifyLayout: z.boolean().optional().describe('写入后回读确认坐标已保存（多一次网关往返，默认不做）'),
+                dryRun: z.boolean().optional().describe('只预览，不写入'),
+                name: z.string().min(1).optional().describe('新规则名称'),
+                enable: z.boolean().optional().describe('是否启用'),
+            }),
+            execute: async ({id, name, enable, variables, ...patch}) => {
+                for (const variable of variables || []) {
+                    if (typeof variable.value !== variable.type) return {success: false, error: `变量 ${variable.id} 的初始值类型必须是 ${variable.type}`};
+                }
+                const hasNodeChange = Boolean(patch.add || patch.replace || patch.merge?.length || patch.removeIds?.length || patch.note?.length
+                    || variables?.length || (patch.positions && Object.keys(patch.positions).length) || patch.layout?.mode === 'full');
+                if (!hasNodeChange) {
+                    if (name === undefined && enable === undefined) return {success: true, data: {graphId: id, message: '无变化'}};
+                    return updateGraph(gateway, id, {name, enable});
+                }
+                const result = await patchGraphV2(gateway, id, {
+                    ...patch,
+                    variables: variables as Array<{id: string; scope: string; type: 'number' | 'string'; value: number | string; name?: string}> | undefined,
+                });
+                if (!result.success || patch.dryRun || (name === undefined && enable === undefined)) return result;
+                const meta = await updateGraph(gateway, id, {name, enable});
+                return meta.success ? result : meta;
+            },
+        }),
+
+        put_graph_text: defineTool({
+            description: '用一份完整的紧凑文本（get_graph format="text" 的格式）替换规则内容。服务端按差异计算新增/修改/删除、创建 var 声明的变量、执行两项校验、保留卡片坐标并给新卡片找空位后写入。改动很大、patch_graph 不方便表达时使用。必须传 baseHash。',
+            parameters: z.object({
+                id: z.string().describe('规则ID'),
+                baseHash: z.string().describe('读取文本时的 hash'),
+                baseLayoutHash: z.string().optional().describe('读取文本时的 layoutHash'),
+                text: z.string().describe('完整紧凑文本'),
+                layout: layoutOptionsSchema.optional().describe('布局方式，默认只摆放新卡片'),
+                dryRun: z.boolean().optional().describe('只预览，不写入'),
+            }),
+            execute: async ({id, ...input}) => putGraphText(gateway, id, input),
+        }),
+
+        query_rules: defineTool({
+            description: '在服务端扫描全部规则，只返回命中的节点（紧凑文本）。用于找「谁在读某变量」「谁在控制某设备属性」，不要逐条读规则。条件可组合（同时满足）。',
+            parameters: z.object({
+                variable: z.string().optional().describe('"$livingOccupied"（全局）、"$R1234.x"（指定作用域）或 "x"（任意作用域）'),
+                device: z.string().optional().describe('did 或设备名称'),
+                property: z.string().optional().describe('"siid/piid"'),
+                nodeType: z.string().optional().describe('节点类型，如 varChange'),
+                contains: z.string().optional().describe('节点文本包含的字符串'),
+                graphs: z.array(z.string()).optional().describe('只查这些规则'),
+            }),
+            execute: async (query) => queryRules(gateway, query),
+        }),
+
+        get_log: defineTool({
+            description: '读取网关执行日志并在服务端过滤。只记录规则执行（连线触发和节点取值），不记录设备自身上报。排查规则为什么没执行时，先用 summary:true 看各节点执行次数，找出执行链断在哪一步。时间为 UTC+8。',
+            parameters: z.object({
+                graph: z.string().optional().describe('规则ID'),
+                nodes: z.array(z.string()).optional().describe('只看这些节点'),
+                minutes: z.number().positive().max(10080).optional().describe('最近多少分钟，默认 60'),
+                limit: z.number().int().positive().max(2000).optional().describe('最多返回多少行（取最新），默认 200'),
+                summary: z.boolean().optional().describe('只返回各节点执行次数'),
+            }),
+            execute: async (query) => getGraphLog(gateway, query),
+        }),
+
+        check_layout: defineTool({
+            description: '只读检查规则的卡片布局（重叠、可能重叠、穿卡连线、交叉估计、分区），不写入网关。可带 positions 或 layout 预览修改效果。穿卡和交叉是估计值，只用于判断是否便于维护，不是规则逻辑错误。',
+            parameters: z.object({
+                id: z.string().describe('规则ID'),
+                positions: positionsSchema.optional().describe('预览这些位置修改'),
+                layout: layoutOptionsSchema.optional().describe("预览布局方式，如 {mode:'full'}"),
+                limit: z.number().int().min(1).max(200).optional().describe('每类问题最多列出几条，默认 30'),
+            }),
+            execute: async ({id, ...input}) => checkGraphLayout(gateway, id, input),
         }),
 
         create_graph: defineTool({
@@ -156,7 +305,7 @@ export function createCoreTools(gateway: GatewayClient) {
         }),
 
         update_graph: defineTool({
-            description: '更新现有规则',
+            description: '整图替换现有规则（需要传全部节点）。修改已有规则优先用 patch_graph，只在补丁无法表达时使用。',
             parameters: z.object({
                 id: z.string().describe('规则ID'),
                 name: z.string().optional().describe('新规则名称'),

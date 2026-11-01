@@ -196,9 +196,9 @@ MCP 模式下**创建**超过 10 个节点的复杂规则时，不要调用两�
 
 小规则和 Web Agent 继续使用原双校验流程。草稿工具缺失时不要虚构调用，改用原流程。复杂规则草稿提交失败时会保留；成功响应丢失或重复提交时返回同一个规则 ID。
 
-### MCP 修改已有规则：用紧凑文本，一条规则一读一写
+### 修改已有规则：用紧凑文本，一条规则一读一写
 
-读写已有规则时优先使用 [规则文本格式](../../../docs/rule-text-format.md)，不要来回传节点 JSON。
+读写已有规则时优先使用 [规则文本格式](../../../docs/rule-text-format.md)，不要来回传节点 JSON。MCP 与 Web Agent 都有这组工具，参数相同；下文写 MCP 工具名，Web Agent 去掉 `mijia_` 前缀即可（`get_graph`、`patch_graph`、`put_graph_text`、`query_rules`、`get_log`、`check_layout`）。
 
 1. **读**：`mijia_get_graph {id, format:"text"}` 一次拿到备注（Markdown）和全部节点（一行一个）以及 `hash`。大规则只看相关部分：`focus:["节点ID"], depth:1`。已读过且只想确认没变：`ifNoneMatch:<hash>`。
 2. **找引用**：「谁在读某变量 / 谁在写某设备属性」用 `mijia_query_rules {variable:"$livingOccupied"}` 或 `{device:"客厅音箱", property:"2/1"}`，不要逐条读规则。
@@ -213,9 +213,9 @@ MCP 模式下**创建**超过 10 个节点的复杂规则时，不要调用两�
    - `baseHash` 必传；挪卡片或重排时同时传 `baseLayoutHash`（读取时返回的 `layoutHash`），防止覆盖别人在 App 里挪过的位置。`dryRun:true` 只预览。
 4. **不必再单独校验和回读**：写入前已做结构与设备能力两项校验；返回值里的 `diff` 就是改动节点写入后的文本。
 5. **交付前看布局**：返回值的 `layout` 列出重叠、可能重叠、穿卡连线数和交叉估计；需要确认坐标确实存进网关时传 `verifyLayout:true`（多一次网关往返），结果在 `savedPositionsVerified`。有问题先修再交付，修不了就如实报告。也可随时用只读的 `mijia_check_layout {id}` 检查，或带上 `positions` / `layout` 预览效果。穿卡和交叉是估计值，不代表原生网页实际显示，只用来判断是否好维护。保存会整条重写规则，网关可能重新加载规则，进行中的延时不保证延续，挪卡片也一样。
-6. **改动很大**：用 `scripts/rules.mjs pull` 把规则拉成本地文件，用普通文件编辑只改需要的行，再 `push`（服务端为 `mijia_put_graph_text`）。
+6. **改动很大**：MCP 下用 `scripts/rules.mjs pull` 把规则拉成本地文件，用普通文件编辑只改需要的行，再 `push`（服务端为 `mijia_put_graph_text`）；Web Agent 直接把改好的完整文本交给 `put_graph_text`。
 7. **看执行情况**：`mijia_get_log {graph, minutes}`；先用 `summary:true` 看各节点执行次数，找出执行链断在哪一步。
-8. `mijia_update_graph` 是整图替换，仅兼容保留。Web Agent 没有这些工具，继续使用 update_graph。
+8. `mijia_update_graph` 是整图替换，仅兼容保留，只在补丁无法表达时使用。
 
 **⚠️ create_graph / patch_graph / put_graph_text / update_graph 内置了校验逻辑。如果节点连接有 error 级别的问题，工具会返回错误并拒绝调用 setGraph。修复后重新调用即可。**
 
