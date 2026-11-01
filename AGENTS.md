@@ -138,7 +138,7 @@ Copy `.env.example` to `.env`:
 ```env
 LLM_BASE_URL=https://api.openai.com/v1
 LLM_API_KEY=your_key
-LLM_MODEL=gpt-4o
+LLM_MODEL=gpt-6.1-terra
 # LLM_TEMPERATURE=0.7            # optional
 GATEWAY_URL=http://192.168.0.5  # example only; there is no built-in default
 ```
