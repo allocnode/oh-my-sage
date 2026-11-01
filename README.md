@@ -1,106 +1,118 @@
+
+<div align="center">
+
 # Oh My Sage
 
-> 米家自动化极客版 AI Agent - 用自然语言创建复杂的米家极客版自动化规则
+**用说话的方式，创建和修改米家自动化极客版规则**
 
 [![Next.js](https://img.shields.io/badge/Next.js-14-black)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)](https://www.typescriptlang.org/)
-[![Vercel AI SDK](https://img.shields.io/badge/Vercel%20AI%20SDK-3-purple)](https://sdk.vercel.ai/)
-[![MCP](https://img.shields.io/badge/MCP-Protocol-green)](https://modelcontextprotocol.io/)
+[![MCP](https://img.shields.io/badge/MCP-32_tools-6366f1)](#mcp-工具列表)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-Oh My Sage 是一个**工具驱动的 AI Agent**，通过自然语言对话帮助你创建和管理小米米家自动化极客版规则。
+</div>
 
-![Oh My Sage：一句话变成米家自动化规则](docs/images/hero.webp)
+![网页版：一句话需求，Agent 读设备、给方案、校验后写入网关](docs/images/web-create.webp)
+
+Oh My Sage 直接连接局域网里的米家中枢网关。你说想要什么效果，它去读你家的设备和已有规则，给出方案，你确认后自动校验并写进网关，在米家 App 的极客版里立刻能看到。
+
+可以在任何支持 MCP 的 **AI Agent** 里用，也可以打开**自带的网页版**直接聊天。常见的 AI Agent：
+
+- **国内**：腾讯 WorkBuddy、豆包工作、TRAE、Qoder、通义灵码、Kimi Code
+- **海外**：Claude Code、Cursor、OpenCode、Codex
+
+> 豆包工作这类云端产品只能添加远程地址的连接器，需要用下文的「私有服务器」方式部署，并且要让它能访问到你的服务器地址。
 
 ---
 
-## ✨ 核心特性
+## 它能做什么
+
+直接说需求就行，下面都是真实的说法：
+
+| 你说 | 它会做什么 |
+|------|-----------|
+| *「客厅有人的时候自动开灯，晚上别太亮」* | 找到人体传感器和灯，读出它们支持的属性，给出两三个方案让你选，选完校验并创建规则 |
+| *「冰箱门提醒太吵了，最高音量从 60 降到 50，其他别动」* | 在全部规则里定位那一个节点，只改这一行，其余节点原样保留 |
+| *「哪些规则用到了玄关灯？」* | 扫描所有规则，列出引用这个设备的规则和节点，换设备前先查一遍 |
+| *「回家开灯昨晚为什么没触发？」* | 读网关执行日志，告诉你流程停在了哪个节点 |
+| *「离家规则的卡片乱成一团，整理一下」* | 检查重叠和穿过卡片的连线，按连接关系重新分层排版 |
+| *「sleepMode 这个变量没用了，删掉」* | 删除前先扫描全部规则，还有规则在用就拒绝，并告诉你是哪几条 |
+
+第一项网页版和 MCP 都能做，其余几项目前只在 MCP 方式里提供。
+
+## 两种用法
 
 <table>
   <tr>
-    <td width="50%" valign="top">
-      <img src="docs/images/feature-loop.webp" alt="Agent 循环：思考、调用工具、看结果、再判断，直到完成"><br>
-      <b>🤖 Agent 循环</b><br>持续运行的思考-行动循环，非一次性响应
-    </td>
-    <td width="50%" valign="top">
-      <img src="docs/images/feature-tools.webp" alt="工具驱动：查设备、读规则、改规则、校验、查日志、变量，可扩展新工具"><br>
-      <b>🛠️ 工具驱动</b><br>所有能力通过工具实现，灵活可扩展
-    </td>
+    <th width="50%">在 AI Agent 里用（MCP）</th>
+    <th width="50%">网页版</th>
   </tr>
   <tr>
-    <td width="50%" valign="top">
-      <img src="docs/images/feature-think.webp" alt="思考可见：对话中可展开的思考过程"><br>
-      <b>💭 思考可见</b><br>输出思考过程，让你了解 Agent 在做什么
-    </td>
-    <td width="50%" valign="top">
-      <img src="docs/images/feature-options.webp" alt="多方案建议：从简单到智能的三个方案供选择"><br>
-      <b>💡 多方案建议</b><br>为你提供多种实现方案供选择
-    </td>
+    <td valign="top"><img src="docs/images/mcp-patch.webp" alt="在 AI Agent 中通过 MCP 修改规则：定位节点、只改一行、校验后写入"></td>
+    <td valign="top"><img src="docs/images/web-options.webp" alt="网页版：Agent 读完设备后给出两个方案供选择"></td>
   </tr>
   <tr>
-    <td width="50%" valign="top">
-      <img src="docs/images/feature-confirm.webp" alt="确认后执行：写入网关前弹出确认，列出改动"><br>
-      <b>✅ 确认后执行</b><br>重要操作前获取你的确认
-    </td>
-    <td width="50%" valign="top">
-      <img src="docs/images/feature-stream.webp" alt="流式输出：连接、获取设备、校验、写入，进度实时显示"><br>
-      <b>🔄 流式输出</b><br>实时显示处理过程
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <img src="docs/images/layout.webp" alt="自动布局：重叠缠绕的卡片整理为分层排列、0 重叠"><br>
-      <b>📐 自动布局</b><br>规则节点自动排版，清晰展示流程
-    </td>
-    <td width="50%" valign="top">
-      <img src="docs/images/feature-mcp.webp" alt="MCP 支持：AI 编程助手通过 MCP 连接 oh-my-sage 控制米家设备"><br>
-      <b>🔌 MCP 支持</b><br>通过 Model Context Protocol 集成到 AI 编程助手
-    </td>
+    <td valign="top">用你已经在用的 AI Agent，不用另配大模型。改规则只传变化的那几行，适合规则多、经常调整的人。</td>
+    <td valign="top">浏览器里打开就能聊，左边看设备和规则列表，右边是历史对话。需要自己配置一个 OpenAI 兼容的大模型接口。</td>
   </tr>
 </table>
 
-### 一句话创建规则
-
-说出需求，Agent 读取你的设备、给出方案，选定后自动做结构与设备能力两项校验，再写入网关。
-
-![一句话创建自动化规则：说需求、选方案、自动校验、写入网关](docs/images/demo-create.webp)
-
-### 改规则只传变化的部分
-
-已有规则以紧凑文本读出，一行一个节点；修改时用 `mijia_patch_graph` 只提交改动的几行，不再整张 JSON 读出写回。语法见 [规则文本格式](docs/rule-text-format.md)。
-
-![紧凑文本：读一次、改一次](docs/images/rule-text.webp)
-
-### 卡片自动排版
-
-新规则按连接关系分层排版；修改已有规则时原有卡片不动，只给新卡片找空位，写入前做碰撞复检，新放的卡片不会与任何卡片重叠。乱掉的规则可一键全图重排，也可用 `mijia_check_layout` 只读检查。效果见上方「自动布局」图。
-
-### 两种入口，共用一个核心
-
-MCP Server 与 Web 界面调用同一套 Core（`src/core`），网关连接、规则校验和自动排版两边一致。
-
-![架构：AI 编程助手经 MCP、浏览器经 Web Agent，共用 Core 访问米家极客版网关](docs/images/architecture.webp)
+两种方式共用同一套核心代码（`src/core`），网关连接、规则校验和自动排版完全一致。
 
 ---
 
-## 🚀 快速开始
+## 快速开始
 
-**两种使用方式，任选其一：**
+### 准备工作
 
-| 方式 | 适用场景 | 特点 |
-|------|----------|------|
-| 🔌 **MCP Server** | 开发场景 | 集成到 AI 编程助手，作为工具直接调用 |
-| 🌐 **Web 界面** | 日常使用 | 浏览器交互，可视化界面 |
+开始之前，确认这三样都有：
 
-**环境要求**：Node.js 18.17+，以及与米家极客版网关处于同一局域网。Windows 本机常驻脚本需要 Node.js 20.6+，Docker 镜像自带 Node.js 22。
+1. **一台米家中枢网关**，并且已经在米家 App 里开启了「自动化极客版」。
+2. **中枢网关的局域网 IP**，比如 `192.168.0.5`。在米家 App 里打开中枢网关（有多个时选主中枢），点右上角「···」进入设置，找到「自动化极客版」，页面上会显示网关地址。电脑要和网关连在同一个局域网里。
+3. **Node.js 18.17 或更高版本**。没装的话去 [nodejs.org](https://nodejs.org/) 下载 LTS 版本，一路下一步就行。装好后在终端里运行 `node -v`，能看到版本号就说明装好了。
 
-### MCP 方式（一行命令安装）
+另外，每次连接网关都要一个 **6 位登录码**，也在上面那个「自动化极客版」页面里。到连接的时候再去取：登录码只能用一次，用过（不管成没成功）就作废了。
 
-```bash
-# 克隆、构建并链接到系统 PATH
-git clone https://github.com/allocnode/oh-my-sage.git && cd oh-my-sage && npm install && npm run build:mcp && npm link
+### 方式一：在 AI Agent 里用（MCP）
+
+#### 最省事：让 AI Agent 帮你装
+
+打开你的 AI Agent，把下面这段话改好网关地址后整段发给它：
+
+```
+帮我安装这个 MCP Server：https://github.com/allocnode/oh-my-sage
+
+1. 按仓库 README 的「方式一」完成安装、编译和 npm link
+2. 把它加进你自己的 MCP 配置，GATEWAY_URL 填 http://192.168.0.5
+3. 把仓库里的 .agents/skills/mijia-automation 整个目录装成你的 Skill
+4. 装完告诉我需要重启什么
 ```
 
-在 AI 助手的 MCP 配置中添加（Claude Desktop、Cursor 等使用 `mcpServers` 格式的客户端），把 `GATEWAY_URL` 改成你的网关地址：
+它装完后按提示重启 AI Agent，然后直接跳到下面的 [第 5 步：开始对话](#5-开始对话)。
+
+#### 自己动手装
+
+![安装 MCP Server 并注册为本机后台服务](docs/images/install.webp)
+
+##### 1. 下载并安装
+
+打开终端（Windows 用 PowerShell，macOS 用「终端」），逐行运行：
+
+```bash
+git clone https://github.com/allocnode/oh-my-sage.git
+cd oh-my-sage
+npm install
+npm run build:mcp
+npm link
+```
+
+最后一步完成后，运行 `oh-my-sage-mcp --help`，没有报「找不到命令」就说明装好了。
+
+> 这个包没有发布到 npm，所以 `npx oh-my-sage-mcp` 这种写法用不了，一定要先走完上面几步。
+
+##### 2. 把它加到 AI Agent 的 MCP 配置里
+
+在 AI Agent 的设置里找到 MCP（一般叫「MCP」「MCP Servers」或「连接器」），选「手动添加」或「编辑 JSON」，粘贴下面这段，并把 `192.168.0.5` 改成你的中枢网关 IP：
 
 ```json
 {
@@ -113,83 +125,160 @@ git clone https://github.com/allocnode/oh-my-sage.git && cd oh-my-sage && npm in
 }
 ```
 
-配置好后直接对话使用：
+大多数 AI Agent 都认这个格式。少数客户端字段名不一样（比如 OpenCode），对应写法见 [deploy/README.md](deploy/README.md#客户端配置)。
 
-- "帮我查看米家设备"
-- "创建一个每天晚上8点关闭客厅灯的自动化规则"
+##### 3. 装 Skill
 
-> ⚠️ **关于 Skill**：创建/修改自动化规则需要让 AI 助手能读到 `mijia-automation` Skill，见下文 [Step 2](#step-2-安装-skill创建修改规则必需)。
+创建和修改规则时，AI Agent 要参考 `.agents/skills/mijia-automation/` 里的节点模板和连接规则。按你的情况三选一：
 
-**其他客户端的配置格式**，以及**本机常驻 / 私有服务器部署**（登录一次网关，客户端重启后无需重输登录码），见 [deploy/README.md](deploy/README.md)。
+- **在本仓库目录里打开 AI Agent**，并且它支持 `.agents/skills/`：会自动发现，什么都不用做
+- **支持 Skill 的 AI Agent**：把 `.agents/skills/mijia-automation` **整个目录**复制到它的 skills 目录，比如 `~/.agents/skills/`，Claude Code 是 `~/.claude/skills/`
+- **不支持 Skill 的 AI Agent**：把 `SKILL.md` 的内容贴进它的项目规则文件（比如 `AGENTS.md`）
 
-### Web 方式（一行命令启动）
+##### 4. 重启 AI Agent
 
-```bash
-# 克隆并安装
-git clone https://github.com/allocnode/oh-my-sage.git && cd oh-my-sage && npm install
+重启后在 MCP 列表里能看到 `oh-my-sage`，并且显示已连接或有 32 个工具，就说明配置生效了。
 
-# 配置环境变量
-cp .env.example .env
-# 编辑 .env 填入 LLM API 和网关地址
+##### 5. 开始对话
 
-# 启动
-npm run dev
+先在米家 App 的「自动化极客版」页面取一个新的登录码，然后对 AI Agent 说：
+
+```
+帮我连接米家网关，登录码是 123456
 ```
 
-访问 http://localhost:3000 即可使用。Web 方式直接读取仓库内的 Skill，无需另行安装。
+连上以后就可以直接提需求：
 
----
+```
+客厅有人的时候自动开灯，晚上别太亮
+```
 
-## 📖 详细文档
-
-### 🔌 MCP Server（推荐开发场景）
-
-通过 Model Context Protocol 将 oh-my-sage 集成到 AI 编程助手。安装就是快速开始第三条命令（`npm install && npm run build:mcp && npm link`），执行过可直接跳到 Step 2；`oh-my-sage-mcp` 会被链接到系统 PATH，包未发布到 npm，`npx -y oh-my-sage-mcp` 不可用。
-
-#### Step 1: 配置 MCP Server
-
-按需要选择部署方式，工具和功能完全相同：
+#### 部署方式怎么选
 
 ![三种部署方式：stdio、本机常驻、私有服务器](docs/images/deploy.webp)
 
-| 方式 | 进程位置 | 特点 |
-|------|----------|------|
-| **stdio（默认）** | 由 AI 助手按需启动 | 最简单；客户端重启后需重新输入登录码 |
-| **本机常驻** | 本机后台服务，仅监听 `127.0.0.1` | 登录一次，多个客户端共享 |
-| **私有服务器** | NAS / 家庭服务器上的 Docker | 同上，多台电脑共用一个网关登录；需设置访问 token |
+| 方式 | 适合 | 登录码 |
+|------|------|--------|
+| **stdio**（上面的配置） | 先试试看 | AI Agent 每次重启都要重新输入 |
+| **本机常驻** | 自己一台电脑长期用 | 登录一次，所有客户端共享 |
+| **私有服务器**（Docker） | 家里有 NAS，多台电脑共用 | 登录一次，所有电脑共享，需要设置访问 token |
 
-stdio 的配置就是上面快速开始里那段 JSON。本机常驻与私有服务器的安装步骤、环境变量、全部客户端配置格式，统一见 [deploy/README.md](deploy/README.md)。
+本机常驻只要一条命令（在仓库目录里运行）：
 
-#### Step 2: 安装 Skill（创建/修改规则必需）
+```bash
+# Windows（PowerShell）
+pwsh deploy/install-local.ps1 -GatewayUrl http://192.168.0.5
 
-创建或修改规则前，AI 助手需要读取 `mijia-automation` Skill 中的节点模板和连接规则。支持 Skill 的客户端安装后会在需要时自动加载，无需手动操作。
+# macOS / Linux
+bash deploy/install-local.sh -g http://192.168.0.5
+```
 
-Skill 位于 `.agents/skills/mijia-automation/`，安装时请复制**整个目录**（`references/` 下的参考文档会被按需读取）。复制到客户端扫描的 skills 目录即可：
+装完会打印一段配置，把它粘贴到 AI Agent 的 MCP 设置里，替换掉第 2 步的那段即可。Docker 部署、全部参数和排障见 [deploy/README.md](deploy/README.md)。
 
-- **支持 `.agents/skills/` 的客户端**：在本仓库目录内启动时会自动发现，无需复制
-- **其他情况**：复制到该客户端的 skills 目录（如 `~/.agents/skills/`、Claude Code 的 `~/.claude/skills/`）
-- **不支持 Skill 的客户端**：将 `SKILL.md` 内容添加到项目规则文件（如 `AGENTS.md`）或对话中
+### 方式二：网页版
 
-Skill 提供节点类型模板、节点连接规则、关键校验规则、dtype 映射规则、变量的创建与生命周期，以及 `references/` 下的模式库与案例索引。
+网页版自带聊天界面，但需要你自己准备一个大模型的 API Key（下面的表格里任选一家）。
 
-#### Step 3: 连接并使用
+#### 最省事：让 AI Agent 帮你装
 
-1. **连接网关**（登录码是一次性的，每次连接都要从网关获取新的；HTTP 方式下已有会话登录过则无需再输入）：
-   ```
-   帮我连接米家网关，登录码是 123456
-   ```
-2. **查看设备**：
-   ```
-   查看我有哪些米家设备
-   ```
-3. **创建自动化规则**：
-   ```
-   帮我创建一个自动化规则：每天晚上8点关闭客厅灯
-   ```
+```
+帮我在本机部署这个项目的网页版：https://github.com/allocnode/oh-my-sage
 
-#### MCP 工具列表
+- 大模型接口地址：https://api.deepseek.com/v1
+- API Key：（填你的 Key）
+- 模型名称：deepseek-flash
+- 米家中枢网关地址：http://192.168.0.5
 
-共 32 个工具。`mijia_create_graph`、`mijia_patch_graph`、`mijia_update_graph` 和草稿工具构建节点时需要 `mijia-automation` Skill 支持。读写已有规则推荐使用紧凑文本格式，见 [规则文本格式](docs/rule-text-format.md)。
+按 README「方式二」安装依赖、写好 .env，然后启动，告诉我访问地址
+```
+
+#### 自己动手装
+
+##### 1. 下载并安装依赖
+
+```bash
+git clone https://github.com/allocnode/oh-my-sage.git
+cd oh-my-sage
+npm install
+```
+
+##### 2. 填写配置
+
+把 `.env.example` 复制一份改名为 `.env`：
+
+```bash
+# macOS / Linux
+cp .env.example .env
+
+# Windows（PowerShell）
+Copy-Item .env.example .env
+```
+
+用任意文本编辑器打开 `.env`，改成你自己的值：
+
+```env
+LLM_BASE_URL=https://api.deepseek.com/v1   # 大模型接口地址，见下表
+LLM_API_KEY=sk-xxxxxxxx                    # 你的 API Key
+LLM_MODEL=deepseek-flash                   # 模型名称，见下表
+GATEWAY_URL=http://192.168.0.5             # 米家中枢网关地址，必填
+```
+
+| 服务商 | `LLM_BASE_URL` | `LLM_MODEL` 示例 |
+|--------|----------------|-----------------|
+| DeepSeek | `https://api.deepseek.com/v1` | `deepseek-flash` |
+| 通义千问 | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen3.8-flash` |
+| Kimi | `https://api.moonshot.cn/v1` | `kimi-k3.1-pro` |
+| 智谱 GLM | `https://open.bigmodel.cn/api/paas/v4` | `glm-5.3-flashx` |
+| 豆包（火山方舟） | `https://ark.cn-beijing.volces.com/api/v3` | `doubao-seed-2-1-pro-260628` |
+| OpenAI | `https://api.openai.com/v1` | `gpt-6.1-terra` |
+| 本地 Ollama | `http://localhost:11434/v1` | 你已拉取的模型名 |
+
+任何 OpenAI 兼容接口都可以，模型名以服务商控制台里显示的为准。`LLM_TEMPERATURE` 可选，默认 0.7。
+
+##### 3. 启动
+
+```bash
+npm run dev
+```
+
+看到 `Ready` 字样后，用浏览器打开 http://localhost:3000 。
+
+##### 4. 登录并开始对话
+
+在米家 App 的「自动化极客版」页面取一个新的登录码，输进网页里，输满 6 位会自动连接。连上后左边能看到你家的设备，直接在中间的输入框里提需求就行。
+
+网页版直接读取仓库里的 Skill，不用另外安装。对话记录保存在仓库下的 `.sessionstore/` 目录。
+
+---
+
+## 每一步都看得见
+
+网页版里，Agent 的思考和每一次工具调用都会实时显示，点开「执行过程」能看到调用了什么、传了什么参数、网关返回了什么。
+
+![展开的执行过程：思考、结构校验、设备能力校验、创建规则](docs/images/web-process.webp)
+
+写入网关之前固定做两项检查：
+
+- **结构校验**：节点之间的连线是否完整，端口是否接对
+- **设备能力校验**：按设备真实的 MIOT Spec 核对，属性是否存在、能不能写、取值是否在范围内，引用的变量是否存在
+
+有一项不通过就不写入，并把原因告诉 AI 让它修正。
+
+## 规则文本格式
+
+读取和修改规则时，MCP 不会来回传整张节点 JSON，而是用一行一个节点的紧凑文本：
+
+```text
+t   at 20:00:00 -> chk
+chk get 客厅吸顶灯 2/1 = true -> off
+off set 客厅吸顶灯 2/1 = false
+```
+
+设备可以直接写名称，固定内容（节点版本、设备 URN、端口声明等）由服务端自动补全。修改时只提交变化的几行，并带上读取时的 hash，规则在这期间被别人改过就拒绝写入，不会互相覆盖。实测 40 条规则（795 个节点）在 JSON 和文本之间来回转换完全一致。完整语法见 [规则文本格式](docs/rule-text-format.md)。
+
+## MCP 工具列表
+
+共 32 个工具。`mijia_create_graph`、`mijia_patch_graph`、`mijia_update_graph` 和草稿工具在构建节点时需要 `mijia-automation` Skill。
 
 <details>
 <summary><b>展开完整工具列表</b></summary>
@@ -240,7 +329,7 @@ Skill 提供节点类型模板、节点连接规则、关键校验规则、dtype
     </tr>
     <tr>
       <td><code>mijia_patch_graph</code></td>
-      <td>增量修改（修改首选）：一次调用完成文本新增/替换、合并、删除、备注操作和建变量，写入前双重校验、写入后回读，只返回改动明细</td>
+      <td>增量修改（修改首选）：一次调用完成文本新增/替换、合并、删除、备注操作和建变量，写入前双重校验，只返回改动明细</td>
     </tr>
     <tr>
       <td><code>mijia_put_graph_text</code></td>
@@ -340,195 +429,61 @@ Skill 提供节点类型模板、节点连接规则、关键校验规则、dtype
 
 ---
 
-### 🌐 Web 界面（适合日常使用）
+## 安全说明
 
-适合喜欢浏览器交互的用户，提供可视化界面。
+- **只在局域网里连网关。** 和网关之间的通信使用网关自己的登录码认证和加密，不经过云端。唯一的公网请求是校验设备能力时从 `miot-spec.org` 读取设备型号的公开定义；网页版另外会把对话发给你配置的大模型接口。
+- **网页版没有账号系统。** 登录过网关后，能访问这个网页的人都能操作你的规则，不要把它暴露到公网。
+- **HTTP 方式监听非本机地址时必须设置 `MCP_AUTH_TOKEN`**，否则拒绝启动；同时用 `MCP_ALLOWED_HOSTS` 限制可访问的主机名。
+- **排障用的 `mijia_call_api` 只开放只读方法**，不能用它绕过校验写网关。
+- **删除前有检查。** 删除变量时，如果还有规则在用就拒绝；删除规则时会一起清理它自己的变量。
 
-#### 安装步骤
+## 常见问题
 
-**让 AI 帮你安装（推荐）**：
+**登录码提示错误，但我确定没输错？**
+登录码只能用一次，不管成功还是失败，用过就作废了。从网关重新取一个新的。
 
-如果你在使用 **Claude Code**、**Cursor** 等 AI 编程助手，直接告诉它：
+**AI Agent 每次重启都要重新输登录码？**
+这是 stdio 方式的特点，进程跟着客户端一起退出。改用「本机常驻」或「私有服务器」，网关只登录一次。
 
-```
-帮我安装 oh-my-sage: https://github.com/allocnode/oh-my-sage
-
-我需要：
-1. LLM API 地址：https://api.openai.com/v1（或其他 OpenAI 兼容接口）
-2. API Key：你的key
-3. 模型名称：gpt-4o（或其他模型）
-4. 米家网关地址：http://192.168.0.5（改成你的）
-```
-
-**手动安装**：
-
-```bash
-git clone https://github.com/allocnode/oh-my-sage.git && cd oh-my-sage && npm install
-cp .env.example .env
-```
-
-编辑 `.env` 文件：
-
-```env
-# OpenAI 兼容接口配置
-LLM_BASE_URL=https://api.openai.com/v1
-LLM_API_KEY=your_api_key_here
-LLM_MODEL=gpt-4o
-
-# 米家网关地址
-GATEWAY_URL=http://192.168.0.5
-```
-
-启动服务：
-
-```bash
-npm run dev
-```
-
-访问 http://localhost:3000，输入网关登录码即可使用。Web 方式必须在 `.env` 中设置 `GATEWAY_URL`；`LLM_TEMPERATURE` 可选，默认 0.7。会话记录保存在仓库下的 `.sessionstore/` 目录。
+**AI 说创建规则需要 Skill？**
+AI Agent 没读到 `mijia-automation` Skill，按 [快速开始](#快速开始) 第 3 步装好再试。
 
 ---
 
-## 💡 使用示例
-
-### MCP 方式示例
-
-```
-用户: 帮我查看米家设备
-
-Agent: 我来帮你查看米家设备。首先连接到网关。
-
-[mijia_auth] passcode: 123456, gateway_url: http://192.168.0.5
-→ 连接成功
-
-[mijia_get_devices]
-→ 获取到 82 台设备，包括：
-  - 小米智能中控屏 (在线)
-  - 客厅灯 (在线)
-  - 智能窗帘 (在线)
-
-你的智能家居共有 82 台设备，大部分都在线运行良好！
-```
-
-### Web 方式示例
-
-```
-用户: 每天晚上8点关闭客厅灯
-
-Agent: [思考中...] 我来帮你设置这个自动化。
-       [正在获取设备列表...]
-
-       我看到你有这些灯：
-       - 客厅灯 (在线)
-       - 卧室灯 (在线)
-
-       [正在生成建议方案...]
-
-       我为你准备了几个方案：
-
-       ⭐ 方案1: 简单方案
-       - 每天 20:00 准时关闭客厅灯
-       - 优点: 简单直接
-
-       方案2: 智能方案
-       - 每天 20:00，如果灯开着就关闭
-       - 优点: 避免无效操作
-
-       你选择哪个方案？
-```
-
----
-
-## 🤖 支持的模型
-
-Web 界面支持任何 **OpenAI 兼容接口**的模型（MCP 方式使用 AI 助手自身的模型，无需配置）：
-
-| 服务商 | Base URL | 模型示例 |
-|--------|----------|----------|
-| OpenAI | `https://api.openai.com/v1` | `gpt-4o` |
-| 通义千问 | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-max` |
-| DeepSeek | `https://api.deepseek.com/v1` | `deepseek-chat` |
-| Kimi | `https://api.moonshot.cn/v1` | `moonshot-v1-128k` |
-| 本地 Ollama | `http://localhost:11434/v1` | `qwen2:72b` |
-
----
-
-## 📁 项目结构
+## 项目结构
 
 ```
 oh-my-sage/
-├── .agents/
-│   └── skills/
-│       └── mijia-automation/  # 米家自动化 Skill（创建/修改规则必需）
+├── .agents/skills/mijia-automation/  # 规则创建 Skill（节点模板、连接规则、模式库）
 ├── src/
-│   ├── app/                   # Next.js Web 界面与 API 路由
-│   ├── components/            # React 组件
-│   ├── server/                # Web 后端（Agent、LLM、会话、Skill 加载）
-│   ├── core/                  # Core 库（MCP 和 Web 共用）
-│   │   ├── gateway/           # 网关客户端
-│   │   ├── tools/             # 工具实现
-│   │   └── types/             # 类型定义
-│   └── mcp/                   # MCP Server
-│       ├── index.ts           # 入口（stdio / --http）
-│       ├── http.ts            # Streamable HTTP 传输
-│       ├── config.ts          # 配置
-│       ├── utils.ts           # 工具函数
-│       └── tools/             # MCP 工具
-├── tests/                     # 单元测试（npm run test:unit）
-├── deploy/                    # 部署：Docker、本机常驻脚本（见 deploy/README.md）
-├── Dockerfile                 # MCP Server 镜像（HTTP 模式）
-├── dist/mcp/                  # MCP 构建输出
-├── docs/                      # 设计文档
-└── ref/                       # 参考文档
+│   ├── core/          # 共用核心：网关客户端、工具实现、校验、排版
+│   ├── mcp/           # MCP Server（stdio / Streamable HTTP）
+│   ├── app/           # 网页版页面与 API 路由（Next.js）
+│   ├── components/    # 网页版 React 组件
+│   └── server/        # 网页版后端：Agent、会话、Skill 加载
+├── deploy/            # 本机常驻脚本、Docker Compose，见 deploy/README.md
+├── docs/              # 规则文本格式等文档
+├── ref/               # 网关 API 参考
+└── tests/             # 单元测试（npm run test:unit）
 ```
 
----
+更多文档：[部署指南](deploy/README.md) · [规则文本格式](docs/rule-text-format.md) · [网关参考](ref/GUIDE.md) · [Skill 说明](.agents/skills/mijia-automation/SKILL.md)
 
-## 📚 参考文档
+## 参与贡献
 
-- [部署指南](deploy/README.md) - 三种部署方式、全部客户端配置、环境变量、排障
-- [米家网关参考文档](ref/GUIDE.md) - 网关 API、设备结构、规则格式
-- [Agent Skills 规范](.agents/skills/mijia-automation/SKILL.md) - 自动化规则创建指南
-- [自动化知识索引](.agents/skills/mijia-automation/references/index.md) - 模式库与案例索引
-- [设计文档](docs/) - 架构设计和重构说明
+欢迎提 Issue 和 Pull Request。提交前请运行：
 
----
+```bash
+npm run lint
+npm run test:unit
+```
 
-## 🔧 Agent Skills
+测试不会连接真实网关。
 
-Oh My Sage 支持可扩展的 Agent Skills 系统。Web 界面启动时加载仓库 `.agents/skills/` 和用户目录 `~/.agents/skills/` 下的 Skill（同名时仓库优先）；MCP 方式由 AI 助手自身的 Skill 机制加载，见上文 [Step 2](#step-2-安装-skill创建修改规则必需)。
+## License
 
-### 渐进式披露
+[MIT](LICENSE)
 
-| 层级 | 内容 | Token 成本 | 触发时机 |
-|------|------|-----------|----------|
-| Catalog | name + description | ~50-100/Skill | 系统初始化 |
-| Instructions | 完整 SKILL.md | 数千 tokens | `activate_skill` 自动/手动激活 |
-| Resources | references/ 等 | 按需加载 | `read_skill_file` |
+## 致谢
 
----
-
-## 🤝 Contributing
-
-欢迎贡献！请遵循以下步骤：
-
-1. Fork 本仓库
-2. 创建特性分支 (`git checkout -b feature/amazing-feature`)
-3. 提交更改 (`git commit -m 'Add amazing feature'`)，提交前运行 `npm run lint` 和 `npm run test:unit`
-4. 推送到分支 (`git push origin feature/amazing-feature`)
-5. 开启 Pull Request
-
----
-
-## 📄 License
-
-MIT License - 详见 [LICENSE](LICENSE) 文件
-
----
-
-## 🙏 致谢
-
-- [Vercel AI SDK](https://sdk.vercel.ai/) - AI 应用框架
-- [Next.js](https://nextjs.org/) - React 框架
-- [Ant Design](https://ant.design/) - UI 组件库
-- [MCP](https://modelcontextprotocol.io/) - Model Context Protocol
+[Vercel AI SDK](https://sdk.vercel.ai/) · [Next.js](https://nextjs.org/) · [Ant Design](https://ant.design/) · [Model Context Protocol](https://modelcontextprotocol.io/)

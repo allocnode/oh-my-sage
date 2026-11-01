@@ -39,7 +39,7 @@ export function createModel(config: ModelConfig) {
  * 环境变量：
  *   LLM_BASE_URL  - API 地址，如 https://api.openai.com/v1
  *   LLM_API_KEY   - API Key
- *   LLM_MODEL     - 模型名称，如 gpt-4o
+ *   LLM_MODEL     - 模型名称，如 gpt-6.1-terra
  */
 export function getModelConfigFromEnv(): ModelConfig {
     return {
