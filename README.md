@@ -376,15 +376,15 @@ off set 客厅吸顶灯 2/1 = false
     <tr>
       <td rowspan="3">连接</td>
       <td><code>mijia_auth</code></td>
-      <td>连接米家网关（需 6 位一次性登录码；已连接时无需再次认证）</td>
+      <td>连接米家网关（需 6 位一次性登录码；已连接时无需再次认证。<code>reconnect=true</code> 更换网关或重新登录，新连接成功后才替换原连接）</td>
     </tr>
     <tr>
       <td><code>mijia_disconnect</code></td>
-      <td>断开网关连接</td>
+      <td>断开网关连接（共享连接下所有客户端都会断开，需要新的登录码才能重连）</td>
     </tr>
     <tr>
       <td><code>mijia_status</code></td>
-      <td>检查连接状态</td>
+      <td>检查连接状态（<code>verify=true</code> 实际询问网关一次，确认连接可用）</td>
     </tr>
     <tr>
       <td rowspan="3">设备</td>
