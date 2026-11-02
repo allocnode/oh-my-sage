@@ -16,97 +16,55 @@
 
 Oh My Sage 直接连接局域网里的米家中枢网关。你说想要什么效果，它去读你家的设备和已有规则，给出方案，你确认后自动校验并写进网关，在米家 App 的极客版里立刻能看到。
 
-可以在任何支持 MCP 的 **AI Agent** 里用，也可以打开**自带的网页版**直接聊天。常见的 AI Agent：
-
-- **国内**：腾讯 WorkBuddy、豆包工作、TRAE、Qoder、通义灵码、Kimi Code
-- **海外**：Claude Code、Cursor、OpenCode、Codex
-
-> 豆包工作这类云端产品只能添加远程地址的连接器，需要用下文的 [私有服务器](#换成私有服务器docker) 方式部署，并且要让它能访问到你的服务器地址。
-
----
+可以在任何支持 MCP 的 **AI Agent** 里用（腾讯 WorkBuddy、TRAE、Qoder、通义灵码、Kimi Code、Claude Code、Cursor、OpenCode、Codex 等），也可以打开**自带的网页版**直接聊天。
 
 ## 它能做什么
-
-直接说需求就行，下面都是真实的说法：
 
 | 你说 | 它会做什么 |
 |------|-----------|
 | *「客厅有人的时候自动开灯，晚上别太亮」* | 找到人体传感器和灯，读出它们支持的属性，给出两三个方案让你选，选完校验并创建规则 |
 | *「冰箱门提醒太吵了，最高音量从 60 降到 50，其他别动」* | 在全部规则里定位那一个节点，只改这一行，其余节点原样保留 |
-| *「哪些规则用到了玄关灯？」* | 扫描所有规则，列出引用这个设备的规则和节点，换设备前先查一遍 |
+| *「哪些规则用到了玄关灯？」* | 扫描所有规则，列出引用这个设备的规则和节点 |
 | *「回家开灯昨晚为什么没触发？」* | 读网关执行日志，告诉你流程停在了哪个节点 |
-| *「离家规则的卡片乱成一团，整理一下」* | 检查重叠和穿过卡片的连线，按连接关系重新分层排版 |
-| *「sleepMode 这个变量没用了，删掉」* | 删除前先扫描全部规则，还有规则在用就拒绝，并告诉你是哪几条 |
+| *「离家规则的卡片乱成一团，整理一下」* | 检查重叠和穿过卡片的连线，按连接关系重新排版 |
+| *「sleepMode 这个变量没用了，删掉」* | 先扫描全部规则，还有规则在用就拒绝，并告诉你是哪几条 |
 
-第一项网页版和 MCP 都能做，其余几项目前只在 MCP 方式里提供。
-
-## 两种用法
-
-<table>
-  <tr>
-    <th width="50%">在 AI Agent 里用（MCP）</th>
-    <th width="50%">网页版</th>
-  </tr>
-  <tr>
-    <td valign="top"><img src="docs/images/mcp-patch.webp" alt="在 AI Agent 中通过 MCP 修改规则：定位节点、只改一行、校验后写入"></td>
-    <td valign="top"><img src="docs/images/web-options.webp" alt="网页版：Agent 读完设备后给出两个方案供选择"></td>
-  </tr>
-  <tr>
-    <td valign="top">用你已经在用的 AI Agent，不用另配大模型。改规则只传变化的那几行，适合规则多、经常调整的人。</td>
-    <td valign="top">浏览器里打开就能聊，左边看设备和规则列表，右边是历史对话。需要自己配置一个 OpenAI 兼容的大模型接口。</td>
-  </tr>
-</table>
-
-两种方式共用同一套核心代码（`src/core`），网关连接、规则校验和自动排版完全一致。
+第一项网页版和 AI Agent 都能做，其余几项目前只在 AI Agent 里提供。
 
 ---
 
 ## 快速开始
 
-### 准备工作
+### 准备
 
-1. **一台米家中枢网关**，并且已经在米家 App 里开启了「自动化极客版」。
-2. **中枢网关的局域网 IP**，比如 `192.168.0.5`。在米家 App 里打开中枢网关（有多个时选主中枢），点右上角「···」进入设置，找到「自动化极客版」，页面上会显示网关地址。运行 Oh My Sage 的电脑或服务器要和网关在同一个局域网里。
-3. **Node.js 20 或更高版本**。没装的话去 [nodejs.org](https://nodejs.org/) 下载 LTS 版本，一路下一步就行。装好后在终端里运行 `node -v`，能看到版本号就说明装好了。
+1. 一台米家中枢网关，在米家 App 里开启「自动化极客版」。
+2. 网关的局域网 IP：米家 App → 中枢网关（多个时选主中枢）→ 右上角「···」→「自动化极客版」，页面上能看到。同一个页面还会显示 **6 位登录码**，连接时再来取，它只能用一次。
+3. [Node.js](https://nodejs.org/) 20 或更高版本，终端里运行 `node -v` 能看到版本号即可。
 
-另外，每次连接网关都要一个 **6 位登录码**，也在上面那个「自动化极客版」页面里。到连接的时候再去取：登录码只能用一次，用过（不管成没成功）就作废了。
+### 安装（两条命令）
 
-### 选一种用法
+把 `<网关 IP>` 换成你的网关 IP，在终端里依次运行：
 
-![三种部署方式：stdio、本机常驻、私有服务器](docs/images/deploy.webp)
-
-| 用法 | 适合 | 登录码 | 怎么装 |
-|------|------|--------|--------|
-| **AI Agent · 按需启动**（stdio） | 第一次用，先试试看 | AI Agent 每次重启都要重新输 | [方式一](#方式一在-ai-agent-里用mcp)，加一段配置就行 |
-| **AI Agent · 本机常驻** | 自己一台电脑长期用 | 登录一次，本机所有 AI Agent 共享 | 先走完方式一，再 [换成本机常驻](#换成本机常驻) |
-| **AI Agent · 私有服务器**（Docker） | 家里有 NAS，多台电脑共用 | 登录一次，所有电脑共享 | [换成私有服务器](#换成私有服务器docker) |
-| **网页版** | 不用 AI Agent，想直接在浏览器里聊 | 网页服务每次启动后输一次 | [方式二](#方式二网页版)，需要自己的大模型 API Key |
-
-拿不准就从第一种开始，以后随时能换，Skill 和用法都不变。
-
-### 方式一：在 AI Agent 里用（MCP）
-
-MCP Server 已经发布到 npm，包名 [`oh-my-sage-mcp`](https://www.npmjs.com/package/oh-my-sage-mcp)。不用下载仓库，也不用自己编译，AI Agent 会通过 `npx` 自动下载并运行最新版。
-
-#### 最省事：让 AI Agent 帮你装
-
-打开你的 AI Agent，把下面这段话里的 `<网关 IP>` 换成你的中枢网关 IP，再整段发给它：
-
-```
-帮我安装这个 MCP Server：https://github.com/allocnode/oh-my-sage
-
-1. 把 npm 包 oh-my-sage-mcp 加进你自己的 MCP 配置，用 npx -y oh-my-sage-mcp 启动，环境变量 GATEWAY_URL 填 http://<网关 IP>（如果这里还是尖括号占位符，先问我要网关 IP，不要自己编）
-2. 运行 npx skills add allocnode/oh-my-sage --skill mijia-automation -g -y，并用 -a 参数只装给你自己（可选值见 npx skills add --help），不要装给其他 Agent
-3. 装完告诉我需要重启什么
+```bash
+npx -y add-mcp oh-my-sage-mcp -g -n oh-my-sage --env GATEWAY_URL=http://<网关 IP>
+npx -y skills add allocnode/oh-my-sage --skill mijia-automation -g
 ```
 
-它装完后按提示重启 AI Agent，然后直接跳到下面的 [第 4 步：开始对话](#4-开始对话)。
+- 第一条把 MCP Server 加进 AI Agent 的配置，会列出你电脑上装的 AI Agent，勾选要用的那几个。
+- 第二条安装规则 Skill，AI 创建和修改规则时要参考它，同样勾选你的 AI Agent。
 
-#### 自己动手装
+装完重启 AI Agent，在米家 App 里取一个新的登录码，对它说：
 
-##### 1. 把它加到 AI Agent 的 MCP 配置里
+```
+帮我连接米家网关，登录码是 <登录码>
+```
 
-在 AI Agent 的设置里找到 MCP（一般叫「MCP」「MCP Servers」或「连接器」），选「手动添加」或「编辑 JSON」，粘贴下面这段，并把 `<网关 IP>` 换成你的中枢网关 IP（换完类似 `"http://192.168.0.5"`）：
+连上以后直接提需求，比如「客厅有人的时候自动开灯，晚上别太亮」。
+
+<details>
+<summary><b>列表里没有我的 AI Agent？手动添加配置</b></summary>
+
+在 AI Agent 的 MCP 设置里选「手动添加」或「编辑 JSON」，粘贴：
 
 ```json
 {
@@ -120,191 +78,70 @@ MCP Server 已经发布到 npm，包名 [`oh-my-sage-mcp`](https://www.npmjs.com
 }
 ```
 
-大多数 AI Agent 都认这个格式。少数客户端字段名不一样（比如 OpenCode），对应写法见 [deploy/README.md](deploy/README.md#客户端配置)。
+不支持 Skill 的 AI Agent，可以把 [SKILL.md](.agents/skills/mijia-automation/SKILL.md) 的内容贴进它的规则文件（比如 `AGENTS.md`）。其他客户端的写法见 [部署指南](deploy/README.md#客户端配置)。
 
-想先确认能不能下载运行，可以在终端里执行 `npx -y oh-my-sage-mcp --version`，打印出版本号就没问题。
+</details>
 
-##### 2. 装 Skill
+### 不想每次重启都输登录码
 
-创建和修改规则时，AI Agent 要参考 `mijia-automation` Skill 里的节点模板和连接规则。在终端里运行：
+上面的方式由 AI Agent 按需启动 MCP Server，AI Agent 一退出连接就断了。改成常驻服务后，网关只登录一次，所有 AI Agent 共用。
+
+![三种部署方式：按需启动、本机常驻、私有服务器](docs/images/deploy.webp)
+
+**本机常驻**（自己一台电脑用）：
 
 ```bash
-npx skills add allocnode/oh-my-sage --skill mijia-automation -g
+npm install -g oh-my-sage-mcp
+
+# Windows（PowerShell，不需要管理员权限）
+powershell -ExecutionPolicy Bypass -File "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.ps1" -GatewayUrl "http://<网关 IP>"
+# macOS / Linux
+bash "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.sh" -g "http://<网关 IP>"
+
+# 把 AI Agent 的配置换成连接这个服务
+npx -y add-mcp http://127.0.0.1:3790/mcp -g -n oh-my-sage
 ```
 
-`-g` 表示装到用户目录，所有项目都能用；不加的话只装进当前所在的文件夹。安装时会列出你电脑上的 AI Agent，选你正在用的那个就行。不支持 Skill 的 AI Agent，可以把 [SKILL.md](.agents/skills/mijia-automation/SKILL.md) 的内容贴进它的规则文件（比如 `AGENTS.md`）。
+服务开机登录后自动运行，只对本机开放。
 
-##### 3. 重启 AI Agent
+**私有服务器 / NAS**（几台电脑共用，或者用豆包工作这类云端 AI Agent）：在服务器上用 Docker 部署，步骤见 [部署指南](deploy/README.md#方式三私有服务器docker)。部署好后，每台电脑运行：
 
-重启后在 MCP 列表里能看到 `oh-my-sage`，并且显示已连接或有 32 个工具，就说明配置生效了。第一次启动要从 npm 下载，会多等几秒。
-
-##### 4. 开始对话
-
-先在米家 App 的「自动化极客版」页面取一个新的登录码，然后对 AI Agent 说（把 `<登录码>` 换成那 6 位数字）：
-
-```
-帮我连接米家网关，登录码是 <登录码>
+```bash
+npx -y add-mcp http://<服务器 IP>:3790/mcp -g -n oh-my-sage --header "Authorization: Bearer <访问密码>"
 ```
 
-连上以后就可以直接提需求：
-
-```
-客厅有人的时候自动开灯，晚上别太亮
-```
-
-#### 换成本机常驻
-
-按需启动的进程跟着 AI Agent 一起退出，所以每次重启 AI Agent 都要重新输登录码。本机常驻会把 MCP Server 注册成开机登录后自动运行的后台服务，只在本机 `127.0.0.1:3790` 上提供服务，网关登录一次，本机所有 AI Agent 都能共用。
-
-![全局安装 oh-my-sage-mcp 并注册为本机后台服务](docs/images/install.webp)
-
-1. 全局安装，安装脚本随包一起下载：
-
-   ```bash
-   npm install -g oh-my-sage-mcp
-   ```
-
-2. 运行安装脚本，把 `<网关 IP>` 换成你的：
-
-   ```bash
-   # Windows（在 PowerShell 里运行，不需要管理员权限）
-   powershell -ExecutionPolicy Bypass -File "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.ps1" -GatewayUrl "http://<网关 IP>"
-
-   # macOS / Linux
-   bash "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.sh" -g "http://<网关 IP>"
-   ```
-
-   看到「已启动：http://127.0.0.1:3790/mcp」就装好了。Windows 注册的是计划任务，macOS 是 launchd，Linux 是 systemd 用户服务，都是登录后自动启动、退出后自动拉起。Windows 命令里的 `-ExecutionPolicy Bypass` 只对这一次运行放开系统默认的脚本限制，不改系统设置；Windows 上的后台服务需要 Node.js 20.6 或更高版本。
-
-3. 把 AI Agent 里第 1 步的那段配置换成下面这段（脚本最后也会打印出来，可以直接复制）：
-
-   ```json
-   {
-     "mcpServers": {
-       "oh-my-sage": {
-         "url": "http://127.0.0.1:3790/mcp"
-       }
-     }
-   }
-   ```
-
-4. 重启 AI Agent，按 [第 4 步](#4-开始对话) 连接网关。以后再重启 AI Agent 就不用重新输登录码了。
-
-想确认服务在运行，打开 http://127.0.0.1:3790/healthz ，看到 `"ok":true` 就是正常的，`connected` 表示当前是否已登录网关。端口、访问 token 等参数见 [deploy/README.md](deploy/README.md#方式二本机常驻)。
-
-#### 换成私有服务器（Docker）
-
-适合家里有 NAS 或一直开着的服务器，几台电脑共用一个网关登录。服务器上要装好 Git 和 Docker（带 Compose），能访问米家中枢网关，也能访问公网的 `miot-spec.org`（校验设备能力时用）。
-
-1. 在服务器上下载仓库，复制配置文件：
-
-   ```bash
-   git clone https://github.com/allocnode/oh-my-sage.git
-   cd oh-my-sage/deploy
-   cp .env.example .env
-   ```
-
-2. 编辑 `.env`，必须填这三项：
-
-   ```env
-   # 米家中枢网关地址
-   GATEWAY_URL=http://<网关 IP>
-   # 访问密码，换成一串足够长的随机字符，可以在服务器上运行 openssl rand -hex 32 生成
-   MCP_AUTH_TOKEN=<访问密码>
-   # 其他电脑访问这台服务器时用的 IP 或域名，多个用英文逗号隔开，不带端口
-   MCP_ALLOWED_HOSTS=<服务器 IP>
-   ```
-
-   不填 `MCP_AUTH_TOKEN` 服务会拒绝启动。`MCP_ALLOWED_HOSTS` 漏掉了哪个地址，用那个地址访问就会被拒绝（403）。
-
-3. 构建并启动：
-
-   ```bash
-   docker compose up -d --build
-   ```
-
-   第一次要在服务器上编译，需要几分钟。之后运行 `curl http://<服务器 IP>:3790/healthz`，看到 `"ok":true` 就说明服务起来了。
-
-4. 在每台电脑的 AI Agent 里填服务器地址和访问密码：
-
-   ```json
-   {
-     "mcpServers": {
-       "oh-my-sage": {
-         "url": "http://<服务器 IP>:3790/mcp",
-         "headers": { "Authorization": "Bearer <访问密码>" }
-       }
-     }
-   }
-   ```
-
-   `Bearer` 和访问密码之间有一个空格，别删。
-
-5. 每台电脑都按方式一的 [第 2 步](#2-装-skill) 装好 Skill，重启 AI Agent。然后在任意一台电脑上按 [第 4 步](#4-开始对话) 连接网关，其他电脑就不用再输登录码了。
-
-云端 AI Agent（比如豆包工作）只能用这种方式，并且要让它能访问到你的服务器地址。端口、排障等细节见 [deploy/README.md](deploy/README.md#方式三私有服务器docker)。
-
-#### 升级与卸载
+### 升级与卸载
 
 | 用法 | 升级 | 卸载 |
 |------|------|------|
-| 按需启动 | 不用管，每次启动 AI Agent 时 `npx` 都会检查并换上最新版 | 删掉 MCP 配置里的 `oh-my-sage` |
-| 本机常驻 | 重新运行 `npm install -g oh-my-sage-mcp`，再把上面第 2 步的安装脚本运行一次 | 安装脚本末尾加 `-Uninstall`（Windows）或 `-u`（macOS / Linux）运行一次，再 `npm uninstall -g oh-my-sage-mcp` |
-| 私有服务器 | 在仓库目录 `git pull`，再到 `deploy` 目录运行 `docker compose up -d --build` | 在 `deploy` 目录运行 `docker compose down` |
+| 按需启动 | 自动，每次启动都会用 npm 上的最新版 | 删掉 AI Agent 配置里的 `oh-my-sage` |
+| 本机常驻 | `npm install -g oh-my-sage-mcp`，再运行一次安装脚本 | 安装脚本加 `-Uninstall`（Windows）或 `-u` 运行，再 `npm uninstall -g oh-my-sage-mcp` |
+| 私有服务器 | 见 [部署指南](deploy/README.md#方式三私有服务器docker) | 在 `deploy` 目录运行 `docker compose down` |
 
-Skill 不会跟着 MCP Server 自动更新，升级时另外运行 `npx skills update mijia-automation -g`；卸载用 `npx skills remove mijia-automation -g`。每个版本改了什么见 [Releases](https://github.com/allocnode/oh-my-sage/releases)。
+Skill 升级：`npx -y skills update mijia-automation -g`；卸载：`npx -y skills remove mijia-automation -g`。每个版本的改动见 [Releases](https://github.com/allocnode/oh-my-sage/releases)。
 
-### 方式二：网页版
+### 网页版
 
-网页版自带聊天界面，但需要你自己准备一个大模型的 API Key（下面的表格里任选一家）。npm 上发布的只有 MCP Server，网页版要下载仓库运行，所以除了 Node.js 还需要装 [Git](https://git-scm.com/)。
+<details>
+<summary><b>不用 AI Agent，在浏览器里直接聊（需要自己的大模型 API Key）</b></summary>
 
-#### 最省事：让 AI Agent 帮你装
+![网页版：Agent 读完设备后给出两个方案供选择](docs/images/web-options.webp)
 
-把下面这段话里尖括号的部分换成你自己的值，再整段发给 AI Agent。接口地址和模型名称从下文的表格里选一家：
-
-```
-帮我在本机部署这个项目的网页版：https://github.com/allocnode/oh-my-sage
-
-- 大模型接口地址：<LLM_BASE_URL>
-- API Key：<你的 API Key>
-- 模型名称：<LLM_MODEL>
-- 米家中枢网关地址：http://<网关 IP>
-
-按 README「方式二」安装依赖、写好 .env，然后启动，告诉我访问地址。上面哪一项还是尖括号占位符，先问我，不要自己编
-```
-
-#### 自己动手装
-
-##### 1. 下载并安装依赖
+网页版要下载仓库运行，需要 [Git](https://git-scm.com/)：
 
 ```bash
 git clone https://github.com/allocnode/oh-my-sage.git
 cd oh-my-sage
 npm install
+cp .env.example .env    # Windows PowerShell：Copy-Item .env.example .env
 ```
 
-##### 2. 填写配置
-
-把 `.env.example` 复制一份改名为 `.env`：
-
-```bash
-# macOS / Linux
-cp .env.example .env
-
-# Windows（PowerShell）
-Copy-Item .env.example .env
-```
-
-用任意文本编辑器打开 `.env`，把四项改成你自己的值（以 DeepSeek 为例）：
+编辑 `.env`，填好这四项：
 
 ```env
-# 大模型接口地址，见下表
 LLM_BASE_URL=https://api.deepseek.com/v1
-# 你的 API Key
-LLM_API_KEY=<你的 API Key>
-# 模型名称，见下表
 LLM_MODEL=deepseek-flash
-# 米家中枢网关地址，必填
+LLM_API_KEY=<你的 API Key>
 GATEWAY_URL=http://<网关 IP>
 ```
 
@@ -318,40 +155,24 @@ GATEWAY_URL=http://<网关 IP>
 | OpenAI | `https://api.openai.com/v1` | `gpt-6.1-terra` |
 | 本地 Ollama | `http://localhost:11434/v1` | 你已拉取的模型名 |
 
-任何 OpenAI 兼容接口都可以，模型名以服务商控制台里显示的为准。`LLM_TEMPERATURE` 可选，默认 0.7。
+任何 OpenAI 兼容接口都可以。然后运行 `npm run dev`，浏览器打开 http://localhost:3000 ，输入登录码即可。长期使用可以 `npm run build` 后用 `npm start` 启动。更新：`git pull`、`npm install` 后重启。
 
-##### 3. 启动
+网页版没有账号系统，不要把它暴露到公网。
 
-```bash
-npm run dev
-```
-
-看到 `Ready` 字样后，用浏览器打开 http://localhost:3000 。`npm run dev` 是开发模式，第一次打开页面要等它编译；长期使用可以先运行一次 `npm run build`，以后用 `npm start` 启动，打开更快。
-
-##### 4. 登录并开始对话
-
-在米家 App 的「自动化极客版」页面取一个新的登录码，输进网页里，输满 6 位会自动连接。连上后左边能看到你家的设备，直接在中间的输入框里提需求就行。
-
-网页版直接读取仓库里的 Skill，不用另外安装。对话记录保存在仓库下的 `.sessionstore/` 目录。以后更新时，先停掉网页服务，在仓库目录运行 `git pull` 和 `npm install`（用 `npm start` 的还要再 `npm run build`），再重新启动。
+</details>
 
 ---
 
-## 每一步都看得见
-
-网页版里，Agent 的思考和每一次工具调用都会实时显示，点开「执行过程」能看到调用了什么、传了什么参数、网关返回了什么。
+## 写入前一定校验
 
 ![展开的执行过程：思考、结构校验、设备能力校验、创建规则](docs/images/web-process.webp)
 
-写入网关之前固定做两项检查：
+写入网关之前固定做两项检查，任意一项不通过就不写入，并把原因交给 AI 修正：
 
 - **结构校验**：节点之间的连线是否完整，端口是否接对
-- **设备能力校验**：按设备真实的 MIOT Spec 核对，属性是否存在、能不能写、取值是否在范围内，引用的变量是否存在
+- **设备能力校验**：按设备真实的 MIOT Spec 核对属性是否存在、能不能写、取值是否在范围内，引用的变量是否存在
 
-有一项不通过就不写入，并把原因告诉 AI 让它修正。
-
-## 规则文本格式
-
-读取和修改规则时，MCP 不会来回传整张节点 JSON，而是用一行一个节点的紧凑文本：
+读写规则用一行一个节点的紧凑文本，设备直接写名称，修改只提交变化的几行，并带上读取时的 hash，规则在这期间被改过就拒绝写入：
 
 ```text
 t   at 20:00:00 -> chk
@@ -359,11 +180,11 @@ chk get 客厅吸顶灯 2/1 = true -> off
 off set 客厅吸顶灯 2/1 = false
 ```
 
-设备可以直接写名称，固定内容（节点版本、设备 URN、端口声明等）由服务端自动补全。修改时只提交变化的几行，并带上读取时的 hash，规则在这期间被别人改过就拒绝写入，不会互相覆盖。实测 40 条规则（795 个节点）在 JSON 和文本之间来回转换完全一致。完整语法见 [规则文本格式](docs/rule-text-format.md)。
+完整语法见 [规则文本格式](docs/rule-text-format.md)。
 
 ## MCP 工具列表
 
-共 32 个工具。`mijia_create_graph`、`mijia_patch_graph`、`mijia_update_graph` 和草稿工具在构建节点时需要 `mijia-automation` Skill。
+共 32 个工具。创建和修改规则的工具需要配合 `mijia-automation` Skill。
 
 <details>
 <summary><b>展开完整工具列表</b></summary>
@@ -512,64 +333,42 @@ off set 客厅吸顶灯 2/1 = false
 
 </details>
 
----
-
 ## 安全说明
 
-- **只在局域网里连网关。** 和网关之间的通信使用网关自己的登录码认证和加密，不经过云端。唯一的公网请求是校验设备能力时从 `miot-spec.org` 读取设备型号的公开定义；网页版另外会把对话发给你配置的大模型接口。
-- **网页版没有账号系统。** 登录过网关后，能访问这个网页的人都能操作你的规则，不要把它暴露到公网。
-- **HTTP 方式监听非本机地址时必须设置 `MCP_AUTH_TOKEN`**，否则拒绝启动；同时用 `MCP_ALLOWED_HOSTS` 限制可访问的主机名。
-- **排障用的 `mijia_call_api` 只开放只读方法**，不能用它绕过校验写网关。
-- **删除前有检查。** 删除变量时，如果还有规则在用就拒绝；删除规则时会一起清理它自己的变量。
+- **只在局域网里连网关**，通信用网关自己的登录码认证和加密，不经过云端。唯一的公网请求是校验设备能力时从 `miot-spec.org` 读取设备型号的公开定义；网页版另外会把对话发给你配置的大模型接口。
+- **常驻服务监听非本机地址时必须设置访问密码**（`MCP_AUTH_TOKEN`），否则拒绝启动。
+- **排障用的 `mijia_call_api` 只开放只读方法**，不能绕过校验写网关。
+- **删除前有检查**：变量还被规则使用时拒绝删除；删除规则时一起清理它自己的变量。
 
 ## 常见问题
 
 **登录码提示错误，但我确定没输错？**
-登录码只能用一次，不管成功还是失败，用过就作废了。从网关重新取一个新的。
-
-**AI Agent 每次重启都要重新输登录码？**
-这是按需启动方式的特点，进程跟着 AI Agent 一起退出。改用 [本机常驻](#换成本机常驻) 或 [私有服务器](#换成私有服务器docker)，网关只登录一次。
+登录码只能用一次，不管成功还是失败，用过就作废了。取一个新的再试。
 
 **AI Agent 里看不到 oh-my-sage，或者显示连接失败？**
-先在终端里运行 `npx -y oh-my-sage-mcp --version`。打印出版本号说明包能正常下载运行，问题在 MCP 配置，检查 JSON 格式和字段名（不同 AI Agent 的写法见 [客户端配置](deploy/README.md#客户端配置)）；报错的话，多半是 Node.js 版本低于 20，或者网络访问不了 npm。
+终端里运行 `npx -y oh-my-sage-mcp --version`。能打印版本号，问题在 AI Agent 的配置；报错的话，多半是 Node.js 低于 20，或者访问不了 npm。
 
 **连不上网关？**
-确认电脑和网关在同一个局域网，`GATEWAY_URL` 是 `http://` 加网关 IP，并且米家 App 里的「自动化极客版」已经开启。
+确认电脑（或服务器）和网关在同一个局域网，地址是 `http://` 加网关 IP，并且「自动化极客版」已开启。
 
 **AI 说创建规则需要 Skill？**
-AI Agent 没读到 `mijia-automation` Skill，按方式一的 [第 2 步](#2-装-skill) 装好，再重启 AI Agent。
+运行安装里的第二条命令，再重启 AI Agent。
 
 ---
 
-## 项目结构
-
-```
-oh-my-sage/
-├── .agents/skills/mijia-automation/  # 规则创建 Skill（节点模板、连接规则、模式库）
-├── src/
-│   ├── core/          # 共用核心：网关客户端、工具实现、校验、排版
-│   ├── mcp/           # MCP Server（stdio / Streamable HTTP）
-│   ├── app/           # 网页版页面与 API 路由（Next.js）
-│   ├── components/    # 网页版 React 组件
-│   └── server/        # 网页版后端：Agent、会话、Skill 加载
-├── deploy/            # 本机常驻脚本、Docker Compose，见 deploy/README.md
-├── docs/              # 规则文本格式等文档
-├── ref/               # 网关 API 参考
-└── tests/             # 单元测试（npm run test:unit）
-```
-
-更多文档：[部署指南](deploy/README.md) · [规则文本格式](docs/rule-text-format.md) · [网关参考](ref/GUIDE.md) · [Skill 说明](.agents/skills/mijia-automation/SKILL.md)
-
 ## 参与贡献
 
-欢迎提 Issue 和 Pull Request。提交前请运行：
+欢迎提 Issue 和 Pull Request。提交前请运行 `npm run lint` 和 `npm run test:unit`，测试不会连接真实网关。
 
-```bash
-npm run lint
-npm run test:unit
+```
+.agents/skills/mijia-automation/  规则 Skill
+src/core/     共用核心：网关客户端、工具、校验、排版
+src/mcp/      MCP Server（stdio / Streamable HTTP）
+src/app/ src/components/ src/server/  网页版
+deploy/       常驻服务脚本与 Docker，见 deploy/README.md
 ```
 
-测试不会连接真实网关。
+更多文档：[部署指南](deploy/README.md) · [规则文本格式](docs/rule-text-format.md) · [网关参考](ref/GUIDE.md)
 
 ## License
 

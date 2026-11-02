@@ -16,7 +16,7 @@ oh-my-sage 的 MCP Server 有三种部署方式，工具和功能完全相同，
 
 ## 方式一：stdio
 
-由客户端按需拉起进程，无需部署脚本。客户端配置见下文 [客户端配置](#客户端配置)，分步说明见 [主 README](../README.md#方式一在-ai-agent-里用mcp)。
+由客户端按需拉起进程，无需部署脚本。客户端配置见下文 [客户端配置](#客户端配置)，一条命令添加的方法见 [主 README](../README.md#安装两条命令)。
 
 `npx -y oh-my-sage-mcp` 不带版本号时，每次启动都会向 npm 查询最新版，有新版本就自动换上，不需要手动升级。想固定版本，写成 `oh-my-sage-mcp@<版本号>`，可用版本见 [npm](https://www.npmjs.com/package/oh-my-sage-mcp?activeTab=versions)。
 
