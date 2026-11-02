@@ -63,7 +63,8 @@ jobs:
 
       - name: Publish to npm
         if: steps.meta.outputs.published == 'false'
-        run: npm publish dist/npm --access public --provenance
+        # 路径必须带 ./，否则 npm 会把 dist/npm 解析成 GitHub 仓库 github:dist/npm
+        run: npm publish ./dist/npm --access public --provenance
 
       - name: Create the GitHub release
         if: github.ref_type == 'tag'
