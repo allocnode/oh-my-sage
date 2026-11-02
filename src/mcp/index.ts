@@ -9,7 +9,22 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { getConfig, type Config } from "./config.js";
 import { resolveHttpOptions, startHttpServer } from "./http.js";
-import { createServer } from "./server.js";
+import { createServer, SERVER_VERSION } from "./server.js";
+
+const HELP = `oh-my-sage-mcp ${SERVER_VERSION}
+米家自动化极客版 MCP Server
+
+用法：
+  oh-my-sage-mcp              以 stdio 方式运行（由 AI Agent 启动）
+  oh-my-sage-mcp --http       以 Streamable HTTP 方式运行，地址 http://127.0.0.1:3790/mcp
+  oh-my-sage-mcp --version    显示版本号
+  oh-my-sage-mcp --help       显示本帮助
+
+环境变量：
+  GATEWAY_URL                 米家中枢网关地址，例如 http://192.168.0.5
+  MCP_HTTP_HOST / MCP_HTTP_PORT / MCP_AUTH_TOKEN / MCP_ALLOWED_HOSTS  HTTP 模式参数
+
+文档：https://github.com/allocnode/oh-my-sage`;
 
 function isHttpTransport(): boolean {
   return process.argv.slice(2).includes("--http") || (process.env.MCP_TRANSPORT || "").toLowerCase() === "http";
@@ -19,6 +34,16 @@ function isHttpTransport(): boolean {
  * 启动 MCP Server
  */
 async function main(): Promise<void> {
+  const args = process.argv.slice(2);
+  if (args.includes("--version") || args.includes("-v")) {
+    console.log(SERVER_VERSION);
+    return;
+  }
+  if (args.includes("--help") || args.includes("-h")) {
+    console.log(HELP);
+    return;
+  }
+
   // 支持从环境变量读取配置
   const userConfig: Config | undefined = process.env.GATEWAY_URL
     ? { gatewayUrl: process.env.GATEWAY_URL }

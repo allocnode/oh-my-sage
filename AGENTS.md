@@ -17,7 +17,8 @@ npm run build            # Production build
 
 # MCP development  
 npm run build:mcp        # Build MCP server only
-npm link                 # Link oh-my-sage-mcp command globally
+npm link                 # Link oh-my-sage-mcp command globally (local development)
+npm run build:npm        # Assemble the publishable oh-my-sage-mcp package in dist/npm
 
 # Quality checks
 npm run lint             # ESLint (next/core-web-vitals)
@@ -60,12 +61,15 @@ npx tsx --test <file>    # Run a single test file
 
 **Docs layout**: `README.md` is the landing page and index only; deployment details, client config formats and env vars live in `deploy/README.md`. Keep heavy operational detail out of the root README.
 
-**Configuration** (stdio; the package is not published to npm, so run `npm run build:mcp && npm link` first):
+**npm package**: the root `package.json` is the private web app and is never published. `scripts/build-npm-package.mjs` assembles `dist/npm/` as the standalone `oh-my-sage-mcp` package: version from the root `package.json`, dependencies limited to what `dist/mcp` actually requires (shared with the Docker image via `deploy/mcp-runtime-package.mjs`), plus `deploy/install-local.*`, README with absolute image URLs, and LICENSE. `scripts/smoke-npm-package.mjs` installs-and-runs the packed tarball (stdio handshake with 32 tools, HTTP `/healthz` + initialize). CI (`.github/workflows/ci.yml`) runs lint, both typechecks, unit tests, that smoke test on ubuntu/windows/macos × Node 20/22/24, and a Docker build. Release: bump `version` in the root `package.json`, merge, push tag `v<version>`; `.github/workflows/release.yml` publishes via npm trusted publishing (OIDC, no token) and creates the GitHub release. The MCP server reports the package version (`SERVER_VERSION` reads `package.json`), so never hard-code it.
+
+**Configuration** (stdio; users run the published npm package through `npx`):
 ```json
 {
   "mcpServers": {
     "oh-my-sage": {
-      "command": "oh-my-sage-mcp",
+      "command": "npx",
+      "args": ["-y", "oh-my-sage-mcp"],
       "env": { "GATEWAY_URL": "http://192.168.0.5" }
     }
   }

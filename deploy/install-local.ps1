@@ -4,11 +4,15 @@
 
 .DESCRIPTION
   注册一个当前用户登录时启动的计划任务，后台无窗口运行（无需管理员权限）：
-    node <仓库>/dist/mcp/mcp/index.js --http
+    node <安装目录>/dist/mcp/mcp/index.js --http
+  安装目录是 npm 全局安装的 oh-my-sage-mcp 包，或者自己构建的仓库目录。
   进程退出后一分钟内自动重新拉起。网关登录一次后，客户端重启无需重新输入登录码。
   配置（GATEWAY_URL、MCP_AUTH_TOKEN 等）写入 %LOCALAPPDATA%\oh-my-sage\<TaskName>.env，
   由 node --env-file 读取（需要 Node.js 20.6+）。
 
+.EXAMPLE
+  npm install -g oh-my-sage-mcp
+  pwsh "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.ps1" -GatewayUrl http://192.168.0.5
 .EXAMPLE
   npm run build:mcp
   pwsh deploy/install-local.ps1 -GatewayUrl http://192.168.0.5
@@ -51,7 +55,7 @@ if ($Uninstall) {
 # ==================== 前置检查 ====================
 $repo = Split-Path -Parent $PSScriptRoot
 $entry = Join-Path $repo 'dist\mcp\mcp\index.js'
-if (-not (Test-Path -LiteralPath $entry)) { throw "未找到 $entry，请先在仓库根目录执行 npm run build:mcp" }
+if (-not (Test-Path -LiteralPath $entry)) { throw "未找到 $entry。从仓库安装时请先在仓库根目录执行 npm run build:mcp；也可以 npm install -g oh-my-sage-mcp 后运行包里的这个脚本" }
 $node = (Get-Command node -ErrorAction Stop).Source
 $nodeVersion = [version]((& $node -v).TrimStart('v'))
 if ($nodeVersion -lt [version]'20.6.0') { throw "需要 Node.js 20.6 或更高版本（当前 $nodeVersion）" }

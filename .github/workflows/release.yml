@@ -1,0 +1,76 @@
+name: Release
+
+# 推送 v* 标签时发布 oh-my-sage-mcp 到 npm，并创建 GitHub Release。
+# 标签必须与 package.json 的 version 一致，例如 version 0.1.0 对应标签 v0.1.0。
+#
+# 发布使用 npm 可信发布（OIDC），不需要在仓库里保存 npm 令牌。
+# 包的 npm 设置里已登记本仓库的这个工作流（Settings → Trusted Publisher：
+# allocnode/oh-my-sage，release.yml），并会自动附带来源证明（provenance）。
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          # 发布产物只能来自标签里的代码，不复用缓存
+          cache: ""
+
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: npx tsc --noEmit -p tsconfig.mcp.json
+      - run: npm run test:unit
+      - run: npm run build:npm
+
+      - name: Check the tag matches package.json
+        id: meta
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::标签 $GITHUB_REF_NAME 与 package.json 版本 $version 不一致"
+            exit 1
+          fi
+          if npm view "oh-my-sage-mcp@$version" version >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::oh-my-sage-mcp@$version 已在 npm 上，跳过发布"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Smoke test the packed package
+        run: |
+          version=${{ steps.meta.outputs.version }}
+          (cd dist/npm && npm pack --pack-destination "$RUNNER_TEMP")
+          mkdir "$RUNNER_TEMP/consumer"
+          cp scripts/smoke-npm-package.mjs "$RUNNER_TEMP/consumer/"
+          cd "$RUNNER_TEMP/consumer"
+          npm init -y >/dev/null
+          npm install "$RUNNER_TEMP/oh-my-sage-mcp-$version.tgz" --no-audit --no-fund
+          node smoke-npm-package.mjs "$version"
+
+      - name: Publish to npm
+        if: steps.meta.outputs.published == 'false'
+        run: npm publish dist/npm --access public --provenance
+
+      - name: Create the GitHub release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+          body: |
+            ```bash
+            npx -y oh-my-sage-mcp@${{ steps.meta.outputs.version }} --version
+            ```

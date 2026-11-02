@@ -69,11 +69,13 @@ Oh My Sage 直接连接局域网里的米家中枢网关。你说想要什么效
 
 1. **一台米家中枢网关**，并且已经在米家 App 里开启了「自动化极客版」。
 2. **中枢网关的局域网 IP**，比如 `192.168.0.5`。在米家 App 里打开中枢网关（有多个时选主中枢），点右上角「···」进入设置，找到「自动化极客版」，页面上会显示网关地址。电脑要和网关连在同一个局域网里。
-3. **Node.js 18.17 或更高版本**。没装的话去 [nodejs.org](https://nodejs.org/) 下载 LTS 版本，一路下一步就行。装好后在终端里运行 `node -v`，能看到版本号就说明装好了。
+3. **Node.js 20 或更高版本**。没装的话去 [nodejs.org](https://nodejs.org/) 下载 LTS 版本，一路下一步就行。装好后在终端里运行 `node -v`，能看到版本号就说明装好了。
 
 另外，每次连接网关都要一个 **6 位登录码**，也在上面那个「自动化极客版」页面里。到连接的时候再去取：登录码只能用一次，用过（不管成没成功）就作废了。
 
 ### 方式一：在 AI Agent 里用（MCP）
+
+MCP Server 已发布到 npm（[`oh-my-sage-mcp`](https://www.npmjs.com/package/oh-my-sage-mcp)），不用下载仓库，AI Agent 会通过 `npx` 自动下载运行。
 
 #### 最省事：让 AI Agent 帮你装
 
@@ -82,35 +84,16 @@ Oh My Sage 直接连接局域网里的米家中枢网关。你说想要什么效
 ```
 帮我安装这个 MCP Server：https://github.com/allocnode/oh-my-sage
 
-1. 按仓库 README 的「方式一」完成安装、编译和 npm link
-2. 把它加进你自己的 MCP 配置，GATEWAY_URL 填 http://192.168.0.5
-3. 把仓库里的 .agents/skills/mijia-automation 整个目录装成你的 Skill
-4. 装完告诉我需要重启什么
+1. 把 npm 包 oh-my-sage-mcp 加进你自己的 MCP 配置，用 npx -y oh-my-sage-mcp 启动，GATEWAY_URL 填 http://192.168.0.5
+2. 运行 npx skills add allocnode/oh-my-sage --skill mijia-automation，把规则 Skill 装给你自己
+3. 装完告诉我需要重启什么
 ```
 
-它装完后按提示重启 AI Agent，然后直接跳到下面的 [第 5 步：开始对话](#5-开始对话)。
+它装完后按提示重启 AI Agent，然后直接跳到下面的 [第 4 步：开始对话](#4-开始对话)。
 
 #### 自己动手装
 
-![安装 MCP Server 并注册为本机后台服务](docs/images/install.webp)
-
-##### 1. 下载并安装
-
-打开终端（Windows 用 PowerShell，macOS 用「终端」），逐行运行：
-
-```bash
-git clone https://github.com/allocnode/oh-my-sage.git
-cd oh-my-sage
-npm install
-npm run build:mcp
-npm link
-```
-
-最后一步完成后，运行 `oh-my-sage-mcp --help`，没有报「找不到命令」就说明装好了。
-
-> 这个包没有发布到 npm，所以 `npx oh-my-sage-mcp` 这种写法用不了，一定要先走完上面几步。
-
-##### 2. 把它加到 AI Agent 的 MCP 配置里
+##### 1. 把它加到 AI Agent 的 MCP 配置里
 
 在 AI Agent 的设置里找到 MCP（一般叫「MCP」「MCP Servers」或「连接器」），选「手动添加」或「编辑 JSON」，粘贴下面这段，并把 `192.168.0.5` 改成你的中枢网关 IP：
 
@@ -118,7 +101,8 @@ npm link
 {
   "mcpServers": {
     "oh-my-sage": {
-      "command": "oh-my-sage-mcp",
+      "command": "npx",
+      "args": ["-y", "oh-my-sage-mcp"],
       "env": { "GATEWAY_URL": "http://192.168.0.5" }
     }
   }
@@ -127,19 +111,23 @@ npm link
 
 大多数 AI Agent 都认这个格式。少数客户端字段名不一样（比如 OpenCode），对应写法见 [deploy/README.md](deploy/README.md#客户端配置)。
 
-##### 3. 装 Skill
+想先确认能不能下载运行，可以在终端里执行 `npx -y oh-my-sage-mcp --version`，打印出版本号就没问题。
 
-创建和修改规则时，AI Agent 要参考 `.agents/skills/mijia-automation/` 里的节点模板和连接规则。按你的情况三选一：
+##### 2. 装 Skill
 
-- **在本仓库目录里打开 AI Agent**，并且它支持 `.agents/skills/`：会自动发现，什么都不用做
-- **支持 Skill 的 AI Agent**：把 `.agents/skills/mijia-automation` **整个目录**复制到它的 skills 目录，比如 `~/.agents/skills/`，Claude Code 是 `~/.claude/skills/`
-- **不支持 Skill 的 AI Agent**：把 `SKILL.md` 的内容贴进它的项目规则文件（比如 `AGENTS.md`）
+创建和修改规则时，AI Agent 要参考 `mijia-automation` Skill 里的节点模板和连接规则。在终端里运行：
 
-##### 4. 重启 AI Agent
+```bash
+npx skills add allocnode/oh-my-sage --skill mijia-automation
+```
 
-重启后在 MCP 列表里能看到 `oh-my-sage`，并且显示已连接或有 32 个工具，就说明配置生效了。
+它会问你要装给哪个 AI Agent，选你正在用的那个就行。不支持 Skill 的 AI Agent，可以把 [SKILL.md](.agents/skills/mijia-automation/SKILL.md) 的内容贴进它的项目规则文件（比如 `AGENTS.md`）。
 
-##### 5. 开始对话
+##### 3. 重启 AI Agent
+
+重启后在 MCP 列表里能看到 `oh-my-sage`，并且显示已连接或有 32 个工具，就说明配置生效了。第一次启动要从 npm 下载，会多等几秒。
+
+##### 4. 开始对话
 
 先在米家 App 的「自动化极客版」页面取一个新的登录码，然后对 AI Agent 说：
 
@@ -163,17 +151,21 @@ npm link
 | **本机常驻** | 自己一台电脑长期用 | 登录一次，所有客户端共享 |
 | **私有服务器**（Docker） | 家里有 NAS，多台电脑共用 | 登录一次，所有电脑共享，需要设置访问 token |
 
-本机常驻只要一条命令（在仓库目录里运行）：
+本机常驻需要先全局安装，再运行包里自带的安装脚本：
+
+![全局安装 oh-my-sage-mcp 并注册为本机后台服务](docs/images/install.webp)
 
 ```bash
+npm install -g oh-my-sage-mcp
+
 # Windows（PowerShell）
-pwsh deploy/install-local.ps1 -GatewayUrl http://192.168.0.5
+pwsh "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.ps1" -GatewayUrl http://192.168.0.5
 
 # macOS / Linux
-bash deploy/install-local.sh -g http://192.168.0.5
+bash "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.sh" -g http://192.168.0.5
 ```
 
-装完会打印一段配置，把它粘贴到 AI Agent 的 MCP 设置里，替换掉第 2 步的那段即可。Docker 部署、全部参数和排障见 [deploy/README.md](deploy/README.md)。
+装完会打印一段配置，把它粘贴到 AI Agent 的 MCP 设置里，替换掉第 1 步的那段即可。以后升级先运行 `npm install -g oh-my-sage-mcp`，再把上面的安装脚本运行一次，它会重启后台服务换上新版本。Docker 部署、全部参数和排障见 [deploy/README.md](deploy/README.md)。
 
 ### 方式二：网页版
 
@@ -446,7 +438,7 @@ off set 客厅吸顶灯 2/1 = false
 这是 stdio 方式的特点，进程跟着客户端一起退出。改用「本机常驻」或「私有服务器」，网关只登录一次。
 
 **AI 说创建规则需要 Skill？**
-AI Agent 没读到 `mijia-automation` Skill，按 [快速开始](#快速开始) 第 3 步装好再试。
+AI Agent 没读到 `mijia-automation` Skill，按 [快速开始](#快速开始) 方式一的第 2 步装好再试。
 
 ---
 
