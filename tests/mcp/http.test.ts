@@ -6,21 +6,23 @@ import path from 'node:path';
 import test from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import type { GatewayManager } from '../../src/core/gateway/manager';
+import type { GatewayManager, GatewayVerifyResult } from '../../src/core/gateway/manager';
 import { defaultAllowedHosts, resolveHttpOptions, startHttpServer, type RunningHttpServer } from '../../src/mcp/http';
 import { GraphDraftStore } from '../../src/mcp/tools/graphDraft';
 
 const TOKEN = 'test-token-123';
 
 /** 不会真正连接网关的替身：只暴露可切换的连接状态 */
-function stubManager(): GatewayManager & { connected: boolean } {
+function stubManager(): GatewayManager & { connected: boolean; verifyResult: GatewayVerifyResult } {
     return {
         connected: false,
+        verifyResult: { connected: false, responsive: false, error: '网关未连接' },
         gateway: null,
         isConnected() { return this.connected; },
         async connect() { throw new Error('stub: 不连接真实网关'); },
         async disconnect() { this.connected = false; },
         ensureConnected() { if (!this.connected) throw new Error('网关未连接，请先调用 mijia_auth'); },
+        async verify() { return this.verifyResult; },
     };
 }
 
@@ -144,6 +146,14 @@ test('HTTP 传输：健康检查、认证、Host 校验、并发与共享网关�
             assert.equal(auth.isError, true);
             const text = (auth.content as Array<{ type: string; text: string }>)[0].text;
             assert.match(text, /已连接且可直接使用/);
+            assert.match(text, /reconnect=true/);
+            assert.doesNotMatch(text, /先调用 mijia_disconnect/);
+
+            // verify=true 实际询问网关；替身返回可控结果
+            manager.verifyResult = { connected: true, responsive: true, latencyMs: 3 };
+            const verified = structured(await a.callTool({ name: 'mijia_status', arguments: { verify: true } }));
+            assert.equal(verified.responsive, true);
+            assert.equal(verified.latencyMs, 3);
 
             // 一个会话断开网关，另一个会话立即看到
             await a.callTool({ name: 'mijia_disconnect', arguments: {} });
