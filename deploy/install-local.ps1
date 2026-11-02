@@ -12,12 +12,12 @@
 
 .EXAMPLE
   npm install -g oh-my-sage-mcp
-  powershell -ExecutionPolicy Bypass -File "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.ps1" -GatewayUrl http://192.168.0.5
+  powershell -ExecutionPolicy Bypass -File "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.ps1" -GatewayUrl "http://<网关 IP>"
 .EXAMPLE
   npm run build:mcp
-  pwsh deploy/install-local.ps1 -GatewayUrl http://192.168.0.5
-  pwsh deploy/install-local.ps1 -GatewayUrl http://192.168.0.5 -Port 3791 -Token (openssl rand -hex 32)
-  pwsh deploy/install-local.ps1 -Uninstall
+  powershell -ExecutionPolicy Bypass -File deploy/install-local.ps1 -GatewayUrl "http://<网关 IP>"
+  powershell -ExecutionPolicy Bypass -File deploy/install-local.ps1 -GatewayUrl "http://<网关 IP>" -Port 3791 -Token "<访问密码>"
+  powershell -ExecutionPolicy Bypass -File deploy/install-local.ps1 -Uninstall
 #>
 [CmdletBinding()]
 param(

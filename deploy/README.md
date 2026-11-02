@@ -10,7 +10,7 @@ oh-my-sage 的 MCP Server 有三种部署方式，工具和功能完全相同，
 
 后两种走 Streamable HTTP（`/mcp`）：进程常驻，请求不经过 stdio 路径，因此并发工具调用较多时也不会刷 `MaxListenersExceededWarning`（该告警来自 MCP SDK stdio 客户端为每个并发请求在流上挂 `drain` 监听器，属于日志噪音，不影响工具执行结果）。无论用哪种方式，客户端都不需要额外处理这个告警。
 
-改完部署方式后，客户端配置见下文 [客户端配置](#客户端配置)。
+改完部署方式后，客户端配置见下文 [客户端配置](#客户端配置)。下文命令和配置里的 `<网关 IP>`、`<服务器 IP>`、`<访问密码>` 都是占位符，换成你自己的值，尖括号不要保留。
 
 ---
 
@@ -18,7 +18,7 @@ oh-my-sage 的 MCP Server 有三种部署方式，工具和功能完全相同，
 
 由客户端按需拉起进程，无需部署脚本。客户端配置见下文 [客户端配置](#客户端配置)，分步说明见 [主 README](../README.md#方式一在-ai-agent-里用mcp)。
 
-`npx -y oh-my-sage-mcp` 不带版本号时，每次启动都会向 npm 查询最新版，有新版本就自动换上，不需要手动升级。想固定版本，写成 `oh-my-sage-mcp@0.1.1` 这样。
+`npx -y oh-my-sage-mcp` 不带版本号时，每次启动都会向 npm 查询最新版，有新版本就自动换上，不需要手动升级。想固定版本，写成 `oh-my-sage-mcp@<版本号>`，可用版本见 [npm](https://www.npmjs.com/package/oh-my-sage-mcp?activeTab=versions)。
 
 ---
 
@@ -37,7 +37,7 @@ npm install -g oh-my-sage-mcp
 ### macOS / Linux
 
 ```bash
-bash "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.sh" -g http://192.168.0.5
+bash "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.sh" -g "http://<网关 IP>"
 ```
 
 | 参数 | 说明 |
@@ -54,7 +54,7 @@ bash "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.sh" -g http://192.168.0
 ### Windows
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.ps1" -GatewayUrl http://192.168.0.5
+powershell -ExecutionPolicy Bypass -File "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.ps1" -GatewayUrl "http://<网关 IP>"
 ```
 
 在 PowerShell 里运行。`-ExecutionPolicy Bypass` 只对这一次运行生效，用来绕过 Windows 默认禁止运行脚本的设置，不会改系统配置。装了 PowerShell 7 的也可以把 `powershell` 换成 `pwsh`。
@@ -80,6 +80,7 @@ git clone https://github.com/allocnode/oh-my-sage.git
 cd oh-my-sage/deploy
 cp .env.example .env   # 填入 GATEWAY_URL、MCP_AUTH_TOKEN、MCP_ALLOWED_HOSTS
 docker compose up -d --build
+curl -s http://<服务器 IP>:3790/healthz   # {"ok":true,...} 即启动成功
 ```
 
 镜像在服务器本地从源码构建。升级：在仓库目录 `git pull`，再到 `deploy` 目录重新 `docker compose up -d --build`。
@@ -90,7 +91,7 @@ docker compose up -d --build
 |------|------|
 | `GATEWAY_URL` | 米家网关局域网地址 |
 | `MCP_AUTH_TOKEN` | 客户端携带的 Bearer token，`openssl rand -hex 32` 生成；**未设置会拒绝启动** |
-| `MCP_ALLOWED_HOSTS` | 客户端访问服务器时用的主机名或 IP，逗号分隔；缺失会导致 Host 校验返回 403 |
+| `MCP_ALLOWED_HOSTS` | 客户端访问服务器时用的主机名或 IP，逗号分隔，不带端口；缺失会导致 Host 校验返回 403 |
 | `MCP_PORT` | 宿主机映射端口，默认 `3790` |
 
 镜像为多阶段构建，运行阶段只装 MCP 实际引用的依赖（约 14 MB，不含 Next.js / antd 等 Web 端依赖）。`deploy/mcp-runtime-package.mjs` 扫描编译产物生成这份最小依赖清单。
@@ -111,7 +112,7 @@ docker compose up -d --build
     "oh-my-sage": {
       "command": "npx",
       "args": ["-y", "oh-my-sage-mcp"],
-      "env": { "GATEWAY_URL": "http://192.168.0.5" }
+      "env": { "GATEWAY_URL": "http://<网关 IP>" }
     }
   }
 }
@@ -125,7 +126,7 @@ docker compose up -d --build
     "oh-my-sage": {
       "type": "local",
       "command": ["npx", "-y", "oh-my-sage-mcp"],
-      "environment": { "GATEWAY_URL": "http://192.168.0.5" }
+      "environment": { "GATEWAY_URL": "http://<网关 IP>" }
     }
   }
 }
@@ -137,22 +138,37 @@ docker compose up -d --build
 
 ### HTTP（Streamable HTTP 客户端）
 
-把地址换成实际部署地址，端口默认 `3790`：
+本机常驻用 `http://127.0.0.1:3790/mcp`，私有服务器用 `http://<服务器 IP>:3790/mcp`：
 
 ```json
 {
   "mcpServers": {
     "oh-my-sage": {
-      "url": "http://127.0.0.1:3790/mcp",
-      "headers": { "Authorization": "Bearer <MCP_AUTH_TOKEN>" }
+      "url": "http://<服务器 IP>:3790/mcp",
+      "headers": { "Authorization": "Bearer <访问密码>" }
     }
   }
 }
 ```
 
-若客户端的 HTTP 配置字段名不同（如 `serverUrl`、`transport` 等），按该客户端文档对应填写；需要鉴权时把 token 放进 `headers`，未设置 token 时去掉 `headers`。
+若客户端的 HTTP 配置字段名不同（如 `serverUrl`、`transport` 等），按该客户端文档对应填写；需要鉴权时把 token 放进 `headers`，未设置 token 时（本机常驻默认不设）去掉 `headers`。
 
-部署在私有服务器时把地址换成服务器的主机名或 IP（并列入 `MCP_ALLOWED_HOSTS`）。
+OpenCode 的写法：
+
+```json
+{
+  "mcp": {
+    "oh-my-sage": {
+      "type": "remote",
+      "url": "http://<服务器 IP>:3790/mcp",
+      "oauth": false,
+      "headers": { "Authorization": "Bearer <访问密码>" }
+    }
+  }
+}
+```
+
+部署在私有服务器时，地址里用的主机名或 IP 必须列入 `MCP_ALLOWED_HOSTS`。
 
 ---
 
@@ -198,7 +214,7 @@ curl -s http://127.0.0.1:3790/healthz
 
 **服务未启动**
 
-安装脚本会打印日志位置。macOS：`~/Library/Logs/oh-my-sage-mcp.log`；Linux：`journalctl --user -u oh-my-sage-mcp`；Windows：查看计划任务「oh-my-sage-mcp」的运行结果。
+安装脚本健康检查失败时会提示排查方法。macOS：`~/Library/Logs/oh-my-sage-mcp.log`；Linux：`journalctl --user -u oh-my-sage-mcp`；Windows：在「任务计划程序」里查看任务「oh-my-sage-mcp」的上次运行结果，或按脚本提示的命令在前台运行一次看报错；Docker：`docker compose logs oh-my-sage-mcp`。
 
 **端口被占用**
 

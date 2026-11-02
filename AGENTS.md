@@ -17,7 +17,7 @@ npm run build            # Production build
 
 # MCP development  
 npm run build:mcp        # Build MCP server only
-npm link                 # Link oh-my-sage-mcp command globally (local development)
+npm link                 # Link oh-my-sage-mcp globally to test a local build (users install from npm)
 npm run build:npm        # Assemble the publishable oh-my-sage-mcp package in dist/npm
 
 # Quality checks
@@ -48,7 +48,7 @@ npx tsx --test <file>    # Run a single test file
 
 **Building**: `npm run build:mcp` outputs to `dist/mcp/mcp/index.js`
 
-**Global command**: `npm link` creates `oh-my-sage-mcp` in PATH
+**Global command**: users get `oh-my-sage-mcp` from npm (`npx -y oh-my-sage-mcp` or `npm install -g`); `npm link` is only for testing a local build
 
 **Local testing**: `oh-my-sage-mcp` (stdio mode, default)
 
@@ -59,7 +59,9 @@ npx tsx --test <file>    # Run a single test file
 - Local PC service: `deploy/install-local.ps1` (Windows Scheduled Task) or `deploy/install-local.sh` (launchd / systemd --user), loopback only
 - Private server: `Dockerfile` + `deploy/docker-compose.yml` + `deploy/.env.example`
 
-**Docs layout**: `README.md` is the landing page and index only; deployment details, client config formats and env vars live in `deploy/README.md`. Keep heavy operational detail out of the root README.
+**Docs layout**: `README.md` is the landing page and carries the beginner step-by-step for each deployment mode (stdio, local service, Docker, web) plus upgrade/uninstall. `deploy/README.md` holds the reference material: script parameters, every client config shape, env vars and troubleshooting. Do not duplicate parameter tables or env var references into the root README.
+
+**User-specific values in docs**: never write a concrete gateway IP, server IP, token, API key or passcode into anything a user copies (config blocks, commands, prompts to paste into an AI Agent, `.env.example`). Use placeholders such as `http://<网关 IP>`, `<服务器 IP>`, `<访问密码>`, `<登录码>`; a concrete value may appear only in prose as "例如 …". `.env.example` files leave required values empty so a forgotten field fails loudly instead of pointing at someone else's network.
 
 **npm package**: the root `package.json` is the private web app and is never published. `scripts/build-npm-package.mjs` assembles `dist/npm/` as the standalone `oh-my-sage-mcp` package: version from the root `package.json`, dependencies limited to what `dist/mcp` actually requires (shared with the Docker image via `deploy/mcp-runtime-package.mjs`), plus `deploy/install-local.*`, README with absolute image URLs, and LICENSE. `scripts/smoke-npm-package.mjs` installs-and-runs the packed tarball (stdio handshake with 32 tools, HTTP `/healthz` + initialize). CI (`.github/workflows/ci.yml`) runs lint, both typechecks, unit tests, that smoke test on ubuntu/windows/macos × Node 20/22/24, and a Docker build. Release: bump `version` in the root `package.json`, merge, push tag `v<version>`; `.github/workflows/release.yml` publishes via npm trusted publishing (OIDC, no token) and creates the GitHub release. The MCP server reports the package version (`SERVER_VERSION` reads `package.json`), so never hard-code it.
 
@@ -70,7 +72,7 @@ npx tsx --test <file>    # Run a single test file
     "oh-my-sage": {
       "command": "npx",
       "args": ["-y", "oh-my-sage-mcp"],
-      "env": { "GATEWAY_URL": "http://192.168.0.5" }
+      "env": { "GATEWAY_URL": "http://<网关 IP>" }
     }
   }
 }
@@ -138,13 +140,13 @@ import { createGatewayManager } from '@/core/gateway/manager';  // Use @/ alias 
 
 ## Environment
 
-Copy `.env.example` to `.env`:
+Copy `.env.example` to `.env` and fill in the empty values:
 ```env
 LLM_BASE_URL=https://api.openai.com/v1
-LLM_API_KEY=your_key
 LLM_MODEL=gpt-6.1-terra
+LLM_API_KEY=                     # required
 # LLM_TEMPERATURE=0.7            # optional
-GATEWAY_URL=http://192.168.0.5  # example only; there is no built-in default
+GATEWAY_URL=                     # required, e.g. http://192.168.0.5; there is no built-in default
 ```
 
 ## Comments
