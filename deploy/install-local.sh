@@ -4,8 +4,8 @@
 #   Linux: systemd --user 服务（Restart=on-failure）
 #
 # 用法（npm install -g oh-my-sage-mcp 后运行包里的这个脚本，或在仓库根目录先 npm run build:mcp）：
-#   bash "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.sh" [-g 网关地址] [-p 端口] [-t token] [-n 服务名]
-#   deploy/install-local.sh -u            # 卸载
+#   bash "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.sh" [-g http://<网关 IP>] [-p 端口] [-t 访问密码] [-n 服务名]
+#   bash "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.sh" -u   # 卸载
 set -euo pipefail
 
 GATEWAY_URL="${GATEWAY_URL:-}"
