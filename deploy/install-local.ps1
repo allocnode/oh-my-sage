@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   将 oh-my-sage MCP Server 安装为本机常驻服务（Windows，HTTP 模式，仅监听 127.0.0.1）。
 
@@ -12,7 +12,7 @@
 
 .EXAMPLE
   npm install -g oh-my-sage-mcp
-  pwsh "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.ps1" -GatewayUrl http://192.168.0.5
+  powershell -ExecutionPolicy Bypass -File "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.ps1" -GatewayUrl http://192.168.0.5
 .EXAMPLE
   npm run build:mcp
   pwsh deploy/install-local.ps1 -GatewayUrl http://192.168.0.5

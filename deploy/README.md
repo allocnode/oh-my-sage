@@ -16,7 +16,9 @@ oh-my-sage 的 MCP Server 有三种部署方式，工具和功能完全相同，
 
 ## 方式一：stdio
 
-由客户端按需拉起进程，无需部署脚本。客户端配置见 [主 README](../README.md#方式一mcp)。
+由客户端按需拉起进程，无需部署脚本。客户端配置见下文 [客户端配置](#客户端配置)，分步说明见 [主 README](../README.md#方式一在-ai-agent-里用mcp)。
+
+`npx -y oh-my-sage-mcp` 不带版本号时，每次启动都会向 npm 查询最新版，有新版本就自动换上，不需要手动升级。想固定版本，写成 `oh-my-sage-mcp@0.1.1` 这样。
 
 ---
 
@@ -28,7 +30,9 @@ oh-my-sage 的 MCP Server 有三种部署方式，工具和功能完全相同，
 npm install -g oh-my-sage-mcp
 ```
 
-下面命令里的 `$(npm root -g)/oh-my-sage-mcp` 是全局安装目录。从仓库源码安装时，先在仓库根目录执行 `npm run build:mcp`，再把路径换成仓库里的 `deploy/` 即可。升级时重新 `npm install -g oh-my-sage-mcp`，再运行一次安装脚本。
+下面命令里的 `$(npm root -g)/oh-my-sage-mcp` 是全局安装目录。服务直接运行这个目录里的代码，升级时重新 `npm install -g oh-my-sage-mcp`，再运行一次安装脚本让服务重启。
+
+从仓库源码安装（开发用）：在仓库根目录执行 `npm run build:mcp`，再把命令里的路径换成仓库里的 `deploy/`。
 
 ### macOS / Linux
 
@@ -50,8 +54,10 @@ bash "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.sh" -g http://192.168.0
 ### Windows
 
 ```powershell
-pwsh "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.ps1" -GatewayUrl http://192.168.0.5
+powershell -ExecutionPolicy Bypass -File "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.ps1" -GatewayUrl http://192.168.0.5
 ```
+
+在 PowerShell 里运行。`-ExecutionPolicy Bypass` 只对这一次运行生效，用来绕过 Windows 默认禁止运行脚本的设置，不会改系统配置。装了 PowerShell 7 的也可以把 `powershell` 换成 `pwsh`。
 
 | 参数 | 说明 |
 |------|------|
@@ -70,9 +76,13 @@ pwsh "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.ps1" -GatewayUrl http:/
 ## 方式三：私有服务器（Docker）
 
 ```bash
-cp deploy/.env.example deploy/.env   # 填入 GATEWAY_URL、MCP_AUTH_TOKEN、MCP_ALLOWED_HOSTS
-cd deploy && docker compose up -d --build
+git clone https://github.com/allocnode/oh-my-sage.git
+cd oh-my-sage/deploy
+cp .env.example .env   # 填入 GATEWAY_URL、MCP_AUTH_TOKEN、MCP_ALLOWED_HOSTS
+docker compose up -d --build
 ```
+
+镜像在服务器本地从源码构建。升级：在仓库目录 `git pull`，再到 `deploy` 目录重新 `docker compose up -d --build`。
 
 `deploy/.env` 需要设置：
 
