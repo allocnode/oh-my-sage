@@ -2,8 +2,6 @@
 
 oh-my-sage 的 MCP Server 有三种部署方式，工具和功能完全相同，区别只在于进程跑在哪里。
 
-![三种部署方式：按需启动、本机常驻、私有服务器](../docs/images/deploy.webp)
-
 | 方式 | 进程位置 | 特点 |
 |------|----------|------|
 | **stdio（默认）** | 由 AI Agent 按需启动 | 最简单，零额外进程；客户端重启后需重新输入登录码 |
@@ -18,7 +16,7 @@ oh-my-sage 的 MCP Server 有三种部署方式，工具和功能完全相同，
 
 ## 方式一：stdio
 
-由客户端按需拉起进程，无需部署脚本，安装命令见 [主 README](../README.md#安装)。客户端不在 `add-mcp` 支持列表里时，手动写法见下文 [客户端配置](#客户端配置)；不支持 Skill 的客户端，把 [SKILL.md](../.agents/skills/mijia-automation/SKILL.md) 的内容贴进它的规则文件（如 `AGENTS.md`）。
+由客户端按需拉起进程，无需部署脚本。客户端配置见下文 [客户端配置](#客户端配置)，一条命令添加的方法见 [主 README](../README.md#安装两条命令)。
 
 `npx -y oh-my-sage-mcp` 不带版本号时，每次启动都会向 npm 查询最新版，有新版本就自动换上，不需要手动升级。想固定版本，写成 `oh-my-sage-mcp@<版本号>`，可用版本见 [npm](https://www.npmjs.com/package/oh-my-sage-mcp?activeTab=versions)。
 
@@ -71,11 +69,7 @@ powershell -ExecutionPolicy Bypass -File "$(npm root -g)/oh-my-sage-mcp/deploy/i
 
 注册为当前用户登录时启动的计划任务，无窗口运行，无需管理员权限。进程退出后一分钟内自动拉起。需要 **Node.js 20.6+**（配置通过 `node --env-file` 读取 `%LOCALAPPDATA%\oh-my-sage\<TaskName>.env`）。
 
-两个脚本装完都会请求 `GET /healthz` 验证，并打印可直接粘贴的客户端配置。也可以一条命令改好 AI Agent 的配置：
-
-```bash
-npx -y add-mcp http://127.0.0.1:3790/mcp -g -n oh-my-sage
-```
+两个脚本装完都会请求 `GET /healthz` 验证，并打印可直接粘贴的客户端配置。
 
 ---
 
@@ -89,15 +83,7 @@ docker compose up -d --build
 curl -s http://<服务器 IP>:3790/healthz   # {"ok":true,...} 即启动成功
 ```
 
-镜像在服务器本地从源码构建。升级：在仓库目录 `git pull`，再到 `deploy` 目录重新 `docker compose up -d --build`；卸载：`docker compose down`。
-
-每台电脑接入：
-
-```bash
-npx -y add-mcp http://<服务器 IP>:3790/mcp -g -n oh-my-sage --header "Authorization: Bearer <访问密码>"
-```
-
-云端 AI Agent（如豆包工作）只能用这种方式，且要能访问到服务器地址。
+镜像在服务器本地从源码构建。升级：在仓库目录 `git pull`，再到 `deploy` 目录重新 `docker compose up -d --build`。
 
 `deploy/.env` 需要设置：
 
@@ -237,19 +223,3 @@ curl -s http://127.0.0.1:3790/healthz
 **登录码相关**
 
 登录码是一次性的，认证一次（无论成败）即作废。HTTP 模式下网关只登录一次，已有会话登录过后，新客户端直接调用工具即可，无需再次 `mijia_auth`。
-
-**AI Agent 里看不到 oh-my-sage**
-
-终端运行 `npx -y oh-my-sage-mcp --version`。能打印版本号，问题在客户端配置；报错多半是 Node.js 低于 20 或访问不了 npm。
-
-**AI 说创建规则需要 Skill**
-
-运行 `npx -y skills add allocnode/oh-my-sage --skill mijia-automation -g`，再重启 AI Agent。Skill 升级用 `npx -y skills update mijia-automation -g`，卸载用 `npx -y skills remove mijia-automation -g`。
-
----
-
-## 安全
-
-- 只在局域网里连网关，通信用网关自己的登录码认证和加密。唯一的公网请求是校验设备能力时从 `miot-spec.org` 读取设备型号的公开定义。
-- HTTP 方式监听非本机地址时必须设置 `MCP_AUTH_TOKEN`，否则拒绝启动。
-- `mijia_call_api` 只开放只读方法；变量还被规则使用时拒绝删除。
