@@ -22,16 +22,18 @@ oh-my-sage 的 MCP Server 有三种部署方式，工具和功能完全相同，
 
 ## 方式二：本机常驻
 
-注册为当前用户登录时自动启动的后台服务，只监听回环地址，默认端口 `3790`。前提是已构建：
+注册为当前用户登录时自动启动的后台服务，只监听回环地址，默认端口 `3790`。安装脚本随 npm 包一起发布，先全局安装：
 
 ```bash
-npm run build:mcp
+npm install -g oh-my-sage-mcp
 ```
+
+下面命令里的 `$(npm root -g)/oh-my-sage-mcp` 是全局安装目录。从仓库源码安装时，先在仓库根目录执行 `npm run build:mcp`，再把路径换成仓库里的 `deploy/` 即可。升级时重新 `npm install -g oh-my-sage-mcp`，再运行一次安装脚本。
 
 ### macOS / Linux
 
 ```bash
-bash deploy/install-local.sh -g http://192.168.0.5
+bash "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.sh" -g http://192.168.0.5
 ```
 
 | 参数 | 说明 |
@@ -48,7 +50,7 @@ bash deploy/install-local.sh -g http://192.168.0.5
 ### Windows
 
 ```powershell
-pwsh deploy/install-local.ps1 -GatewayUrl http://192.168.0.5
+pwsh "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.ps1" -GatewayUrl http://192.168.0.5
 ```
 
 | 参数 | 说明 |
@@ -97,7 +99,8 @@ cd deploy && docker compose up -d --build
 {
   "mcpServers": {
     "oh-my-sage": {
-      "command": "oh-my-sage-mcp",
+      "command": "npx",
+      "args": ["-y", "oh-my-sage-mcp"],
       "env": { "GATEWAY_URL": "http://192.168.0.5" }
     }
   }
@@ -111,14 +114,16 @@ cd deploy && docker compose up -d --build
   "mcp": {
     "oh-my-sage": {
       "type": "local",
-      "command": ["oh-my-sage-mcp"],
+      "command": ["npx", "-y", "oh-my-sage-mcp"],
       "environment": { "GATEWAY_URL": "http://192.168.0.5" }
     }
   }
 }
 ```
 
-区别只在配置文件位置、外层键名和数组/字符串写法，`command` 与 `GATEWAY_URL` 的取值不变。其他客户端按各自文档对应填写。
+区别只在配置文件位置、外层键名和数组/字符串写法，启动命令与 `GATEWAY_URL` 的取值不变。其他客户端按各自文档对应填写。
+
+已经 `npm install -g oh-my-sage-mcp` 全局安装的，可以把启动命令换成 `oh-my-sage-mcp`，启动更快，也不依赖网络。
 
 ### HTTP（Streamable HTTP 客户端）
 

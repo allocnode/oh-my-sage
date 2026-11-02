@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: lint · typecheck · test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - name: Typecheck (web)
+        run: npx tsc --noEmit
+      - name: Typecheck (MCP)
+        run: npx tsc --noEmit -p tsconfig.mcp.json
+      - run: npm run test:unit
+
+  package:
+    # 把要发布的 npm 包打成 tarball，装进一个空目录，再真实启动一次：
+    # stdio 握手并列出 32 个工具、HTTP 模式 /healthz 与 initialize。不连接网关。
+    name: npm package · ${{ matrix.os }} · node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build:npm
+      - name: Pack
+        shell: bash
+        run: |
+          cd dist/npm
+          npm pack --pack-destination "$RUNNER_TEMP"
+      - name: Install the tarball into an empty project and run it
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          mkdir "$RUNNER_TEMP/consumer"
+          cp scripts/smoke-npm-package.mjs "$RUNNER_TEMP/consumer/"
+          cd "$RUNNER_TEMP/consumer"
+          npm init -y >/dev/null
+          npm install "$RUNNER_TEMP/oh-my-sage-mcp-${version}.tgz" --no-audit --no-fund
+          test "$(npx oh-my-sage-mcp --version)" = "$version"
+          node smoke-npm-package.mjs "$version"
+
+  docker:
+    name: docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          tags: oh-my-sage-mcp:ci

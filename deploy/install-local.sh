@@ -3,8 +3,8 @@
 #   macOS: launchd LaunchAgent（登录时启动，退出后自动重启）
 #   Linux: systemd --user 服务（Restart=on-failure）
 #
-# 用法（先在仓库根目录 npm run build:mcp）：
-#   deploy/install-local.sh [-g 网关地址] [-p 端口] [-t token] [-n 服务名]
+# 用法（npm install -g oh-my-sage-mcp 后运行包里的这个脚本，或在仓库根目录先 npm run build:mcp）：
+#   bash "$(npm root -g)/oh-my-sage-mcp/deploy/install-local.sh" [-g 网关地址] [-p 端口] [-t token] [-n 服务名]
 #   deploy/install-local.sh -u            # 卸载
 set -euo pipefail
 
@@ -48,7 +48,7 @@ if [ "$UNINSTALL" = 1 ]; then
 fi
 
 # ==================== 前置检查 ====================
-[ -f "$ENTRY" ] || { echo "未找到 $ENTRY，请先执行 npm run build:mcp" >&2; exit 1; }
+[ -f "$ENTRY" ] || { echo "未找到 $ENTRY。从仓库安装时请先执行 npm run build:mcp；也可以 npm install -g oh-my-sage-mcp 后运行包里的这个脚本" >&2; exit 1; }
 NODE="$(command -v node)" || { echo "未找到 node" >&2; exit 1; }
 [ -n "$GATEWAY_URL" ] || echo "提示：未设置 -g 网关地址，首次调用 mijia_auth 时需要传 gateway_url" >&2
 

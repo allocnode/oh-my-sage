@@ -1,6 +1,7 @@
 {
   "name": "oh-my-sage",
-  "version": "0.0.2",
+  "version": "0.1.0",
+  "private": true,
 
   "scripts": {
     "dev": "next dev",
@@ -9,7 +10,8 @@
     "start": "next start",
     "lint": "next lint",
     "test": "npx tsx src/test.ts",
-    "test:unit": "tsx --test tests/**/*.test.ts"
+    "test:unit": "tsx --test tests/**/*.test.ts",
+    "build:npm": "npm run build:mcp && node scripts/build-npm-package.mjs"
   },
   "bin": {
     "oh-my-sage-mcp": "./dist/mcp/mcp/index.js"
