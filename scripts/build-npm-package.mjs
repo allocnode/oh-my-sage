@@ -11,7 +11,7 @@
  *   - LICENSE
  *
  * 用法：npm run build:mcp && node scripts/build-npm-package.mjs
- * 发布：npm publish dist/npm --access public
+ * 发布：npm publish ./dist/npm --access public（必须带 ./，否则 npm 会把 dist/npm 当成 GitHub 仓库）
  */
 
 import fs from 'node:fs';
