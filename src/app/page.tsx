@@ -235,6 +235,11 @@ export default function HomePage() {
         setMobileTab('chat');
     };
 
+    const handleMobileNewSession = () => {
+        handleNewSession();
+        setMobileTab('chat');
+    };
+
     if (!isLoggedIn) {
         return <LoginPage onLoginSuccess={handleLoginSuccess}/>;
     }
@@ -299,7 +304,7 @@ export default function HomePage() {
                             loading={sessionsLoading}
                             onSelectSession={handleMobileSelectSession}
                             onDeleteSession={handleDeleteSession}
-                            onNewSession={handleNewSession}
+                            onNewSession={handleMobileNewSession}
                             onRefresh={loadSessions}
                         />
                     </div>

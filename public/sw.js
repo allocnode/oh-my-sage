@@ -1,4 +1,5 @@
 /* Oh My Sage Service Worker：静态壳离线兜底；聊天/设备/规则数据实时，不缓存 */
+/* 注意：浏览器按字节比对 sw.js 判断是否更新，升级缓存版本时必须同时改动本文件内容（含 CACHE_NAME） */
 const CACHE_NAME = 'oh-my-sage-v1';
 
 self.addEventListener('install', () => {
@@ -27,8 +28,10 @@ self.addEventListener('fetch', (event) => {
         event.respondWith(
             fetch(request)
                 .then(response => {
-                    const copy = response.clone();
-                    caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
+                    if (response.ok) {
+                        const copy = response.clone();
+                        caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
+                    }
                     return response;
                 })
                 .catch(() => caches.match(request).then(cached => cached || caches.match('/')))

@@ -5,7 +5,6 @@ import './globals.css';
 export const metadata: Metadata = {
     title: 'Oh My Sage',
     description: '米家自动化极客版 AI Agent',
-    manifest: '/manifest.json',
     icons: {
         icon: '/icons/icon-192.png',
         apple: '/icons/apple-touch-icon.png',
