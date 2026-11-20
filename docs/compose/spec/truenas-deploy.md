@@ -2,7 +2,7 @@
 feature: truenas-deploy
 status: delivered
 updated: 2026-11-20
-source: truenas-deploy
+source: https://github.com/allocnode/oh-my-sage/pull/47
 ---
 
 # TrueNAS Docker 部署（MCP + 网页版）
