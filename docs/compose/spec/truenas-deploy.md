@@ -1,6 +1,6 @@
 ---
 feature: truenas-deploy
-status: in-progress
+status: delivered
 updated: 2026-11-20
 source: truenas-deploy
 ---
@@ -8,7 +8,13 @@ source: truenas-deploy
 # TrueNAS Docker 部署（MCP + 网页版）
 
 ## Report
-[Not finalized yet]
+
+**What was built** — 为 oh-my-sage 在 TrueNAS SCALE 上部署 MCP 常驻服务与网页版：新增 `deploy/Dockerfile.web`（Next.js 多阶段镜像，运行时只带编译产物与依赖、预建 `.sessionstore`、HEALTHCHECK），扩展 `deploy/docker-compose.yml` 增加 `oh-my-sage-web` 服务（运行时注入 LLM/网关环境变量、命名卷持久化会话），更新 `deploy/.env.example`。实际部署在 NAS 的 `/home/truenas_admin/oh-my-sage/repo`，`docker compose up -d --build` 后双容器运行：MCP `:3790`、网页版 `:3000`。
+
+**Verification** —
+- NAS 与局域网双侧 curl：MCP `/healthz` → `{"ok":true}`；网页版 → HTTP 200
+- MCP 认证：无 token 请求 `/mcp` → 401；带 token `initialize` 握手 → `serverInfo oh-my-sage 0.1.4`
+- 独立 review（general 子代理）：spec 全部合规，无 critical/major 问题，可 finalize
 
 ## [S1] Problem
 
@@ -93,13 +99,15 @@ WEB_PORT=3000
 
 ## Tasks
 
-- [ ] T1: 新增 `deploy/Dockerfile.web` — acceptance: NAS 上 `docker build` 成功（随 compose 一起验证）
-- [ ] T2: 扩展 `deploy/docker-compose.yml` — acceptance: NAS 上 `docker compose config` 通过，双服务定义正确
-- [ ] T3: 写 NAS `deploy/.env`（真实值 + 生成的 token） — acceptance: 双容器启动后 `healthz` 返回 `{"ok":true}`、网页版 HTTP 200
-- [ ] T4: SSH 部署（clone、传文件、`docker compose up -d --build`） — acceptance: 两容器 `running`
-- [ ] T5: 验证 — acceptance: 3790 `healthz` ok；3000 返回 200；MCP_HOSTS/认证参数与客户端配置一致
-- [ ] T6: 独立 review + finalize spec — acceptance: review 通过，spec `status: delivered`
+- [x] T1: 新增 `deploy/Dockerfile.web` — acceptance: NAS 上 `docker build` 成功（随 compose 一起验证）
+- [x] T2: 扩展 `deploy/docker-compose.yml` — acceptance: NAS 上 `docker compose config` 通过，双服务定义正确
+- [x] T3: 写 NAS `deploy/.env`（真实值 + 生成的 token） — acceptance: 双容器启动后 `healthz` 返回 `{"ok":true}`、网页版 HTTP 200
+- [x] T4: SSH 部署（clone、传文件、`docker compose up -d --build`） — acceptance: 两容器 `running`
+- [x] T5: 验证 — acceptance: 3790 `healthz` ok；3000 返回 200；MCP_HOSTS/认证参数与客户端配置一致
+- [x] T6: 独立 review + finalize spec — acceptance: review 通过，spec `status: delivered`
 
 ## Journey log
 
-None
+- 部署中发现 TrueNAS 的 `docker` 组（gid 999）是 middleware 数据库里的 builtin 组，`user.update` 拒绝修改其成员（`EINVAL: membership of this builtin group may not be altered`），所以 `truenas_admin` 无法获得 docker CLI 权限（UI 里也看不到该选项）；sudo 需要密码、本环境无法交互输密码。最终方案：SSH（密钥认证）只负责准备（克隆、写 .env/部署文件、验证），`docker compose up -d --build` 由用户在 TrueNAS WebUI 自带 Shell（root 身份）执行一条 `bash .../run.sh`。
+- 仓库实际部署路径定为 `/home/truenas_admin/oh-my-sage/repo`（S2.5 计划是 `/mnt/<pool>/apps/...`，因非 root 无法在数据池建目录/改 ACL 而简化）。
+- MCP 会话语义验证：Streamable HTTP 下 initialize 之后需要 `Mcp-Session-Id`，用 curl 直接测 tools/list 会报 400 —— 属规范行为，真实 MCP 客户端会自动处理。
