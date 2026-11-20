@@ -76,23 +76,17 @@ powershell -ExecutionPolicy Bypass -File "$(npm root -g)/oh-my-sage-mcp/deploy/i
 ## 方式三：私有服务器（Docker）
 
 ```bash
-git clone https://github.com/allocnode/oh-my-sage.git
+git clone -b truenas-web-docker https://github.com/KevinZjYang/oh-my-sage.git
 cd oh-my-sage/deploy
 # 编辑 docker-compose.yml：把 <...> 示例值替换成真实值（GATEWAY_URL、MCP_AUTH_TOKEN、LLM_* 等）
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 curl -s http://<服务器 IP>:3790/healthz   # {"ok":true,...} 即启动成功
 ```
 
 部署配置直接写在 `deploy/docker-compose.yml` 里：示例值用 `<...>` 占位，替换成真实值后直接部署，不需要 `.env` 文件。**填好真实值后不要提交该文件**（含 API Key / 网关地址等敏感信息）。
 
-镜像默认在服务器本地从源码构建。也可以拉取 Docker Hub 上的预构建镜像（部署分支 `truenas-web-docker` 的 GitHub Actions 会在推分支 / 打 `v*` tag 时自动构建并推送 `oh-my-sage-mcp`、`oh-my-sage-web` 两个镜像）：把两个服务的 `image:` 改成 `<你的 Docker Hub 用户名>/oh-my-sage-{mcp,web}:latest` 后执行：
-
-```bash
-docker compose pull
-docker compose up -d
-```
-
-升级：本地构建模式在仓库目录 `git pull` 后重新 `docker compose up -d --build`；拉取模式重复上面两条命令即可（无需在服务器上编译）。`git pull` 可能与本地改过的 compose 冲突——更新前先备份，或执行 `git update-index --skip-worktree deploy/docker-compose.yml` 让 git 不再跟踪该文件的改动。
+镜像从 Docker Hub 拉取（纯镜像模式，不在服务器上编译）：推送到 `truenas-web-docker` 分支或打 `v*` tag 时，GitHub Actions 会自动构建并推送 `kevinzjyang/oh-my-sage-mcp`、`kevinzjyang/oh-my-sage-web` 两个镜像。升级：`git pull` 后重复 `docker compose pull && docker compose up -d` 即可。`git pull` 可能与本地改过的 compose 冲突——更新前先备份，或执行 `git update-index --skip-worktree deploy/docker-compose.yml` 让 git 不再跟踪该文件的改动。
 
 本分支的 compose 同时定义两个服务：`oh-my-sage-mcp`（Streamable HTTP `:3790`）与 `oh-my-sage-web`（网页版 `:3000`，无账号系统，勿暴露公网）。
 
@@ -104,7 +98,7 @@ docker compose up -d
 | `MCP_AUTH_TOKEN` | MCP 客户端携带的 Bearer token，`openssl rand -hex 32` 生成 |
 | `MCP_ALLOWED_HOSTS` | 客户端访问服务器时用的主机名或 IP，逗号分隔，不带端口；缺失会导致 Host 校验返回 403 |
 | `LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY` | 网页版聊天用的 OpenAI 兼容接口（网页版服务需要） |
-| 两个服务的 `image:` | 拉取 Docker Hub 镜像时填你的 Docker Hub 用户名；本地构建可不改 |
+| 两个服务的 `image:` | 镜像仓库名，已指向 `kevinzjyang/oh-my-sage-{mcp,web}:latest`，一般不用改 |
 
 镜像为多阶段构建，运行阶段只装 MCP 实际引用的依赖（约 14 MB，不含 Next.js / antd 等 Web 端依赖）。`deploy/mcp-runtime-package.mjs` 扫描编译产物生成这份最小依赖清单。
 

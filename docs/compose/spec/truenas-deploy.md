@@ -86,16 +86,16 @@ source: https://github.com/KevinZjYang/oh-my-sage/tree/truenas-web-docker
 
 ### S2.8 compose 引用镜像 + 公开 fork 的安全约束
 
-- 两个服务增加 `image: oh-my-sage/oh-my-sage-{mcp,web}:latest`（拉取模式改成 `<你的 Docker Hub 用户名>/oh-my-sage-{mcp,web}:latest`），保留 `build:` 作为本地构建回退。
+- 两个服务使用纯镜像引用 `image: kevinzjyang/oh-my-sage-{mcp,web}:latest`，**不保留 `build:`**（纯镜像拉取模式，不在服务器编译；镜像由 GitHub Actions 构建推送，见 S2.7）。
 - **约束**：fork 是公开仓库，真实敏感值（`LLM_API_KEY`、`GATEWAY_URL`、`MCP_AUTH_TOKEN`）**不得出现在任何提交文件中**——compose 只提交 `<...>` 示例值，真实值由用户在 NAS 上编辑 compose 时填入，填好后不提交（配合 `git update-index --skip-worktree deploy/docker-compose.yml` 可让更新不受本地修改影响）。用户最终选择：不用 `.env`，全部配置内嵌 compose。
-- `run.sh` 优先 `docker compose pull`（拉取失败自动回退 `up -d --build` 本地构建）。NAS 更新流程：`git pull` → root 执行 `bash deploy/run.sh`。
+- `run.sh` 为纯拉取：`docker compose pull && docker compose up -d`（无本地构建回退）。NAS 更新流程：`git pull` → root 执行 `bash deploy/run.sh`。TrueNAS Apps 的 Custom App 也使用同一份纯镜像 compose（无 build 段，否则 `up` 会因构建上下文缺失失败）。
 
 ## [S3] Out of Scope
 
 - 不改仓库功能代码（仅 `deploy/` 下新增/修改部署文件）
 - 不推送分支、不开 PR（除非用户要求）
 - 不把网页版暴露公网（官方明令网页版无账号系统）
-- 不用 TrueNAS Apps UI 安装成托管应用；SSH 的 `docker compose` 部署即可运行，容器不进入 Apps 管理列表
+- 部署方式两者皆可：TrueNAS Apps 的 Custom App（托管应用，推荐）或 SSH `docker compose` CLI；同一份纯镜像 compose 通用
 
 ## Tasks
 
@@ -106,7 +106,7 @@ source: https://github.com/KevinZjYang/oh-my-sage/tree/truenas-web-docker
 - [x] T5: 验证 — acceptance: 3790 `healthz` ok；3000 返回 200；MCP_HOSTS/认证参数与客户端配置一致
 - [x] T6: 独立 review + finalize spec — acceptance: review 通过，spec `status: delivered`
 - [x] T7: 新增 GitHub Actions 工作流（`docker-images.yml`）自动构建推送 MCP + 网页镜像到 Docker Hub — acceptance: 工作流文件随分支推送，结构校验通过（Actions 首次运行的确认需用户配置 DOCKERHUB secrets 后完成） (covers: S2.7)
-- [x] T8: compose 改为引用镜像 + `run.sh` 拉取/构建回退 + README 更新 + 移除 `.env.example` — acceptance: 敏感值未进入任何提交文件（提交内容仅占位符），NAS 首次运行时 `docker compose config` 通过 (covers: S2.8)
+- [x] T8: compose 改为纯镜像引用（去 `build:`）+ `run.sh` 纯拉取 + README 更新 + 移除 `.env.example` — acceptance: 敏感值未进入任何提交文件（提交内容仅占位符），NAS/Apps 部署时 `docker compose config` 通过 (covers: S2.8)
 
 ## Journey log
 
@@ -116,3 +116,4 @@ source: https://github.com/KevinZjYang/oh-my-sage/tree/truenas-web-docker
 - 网关地址排障：用户初始提供 `192.168.31.2`，但该 IP 的 80 端口是「小米路由器」管理页，`/centrallinkws/` 全部 404，网页登录报 `Unexpected server response: 404`。扫描整个 192.168.31.0/24（80/54321/9527/5666/30001/51234/8888/18080 + WS 路径探测）无设备应答，后经用户从米家 App 核对：设备是 **小米路由器 BE3600 Pro（带中枢网关功能）**，极客版自动化服务在 **`http://192.168.31.2:8086`**，`ws://192.168.31.2:8086/centrallinkws/` 握手返回 101 确认。`.env` 的 `GATEWAY_URL` 已改为 `http://192.168.31.2:8086` 并重建容器。
 - 移动端响应式 + PWA 特性（`mobile-responsive`，见同目录 `docs/compose/spec/mobile-responsive.md`）合并进本部署分支；`run.sh` 从 NAS 取回并入版本库，NAS 部署改为拉取 fork 的 `truenas-web-docker` 后以 root 执行 `bash deploy/run.sh`。本分支自此接管 fork 部署工作流（spec source 由 PR #47 改为 fork 分支）。
 - 用户要求"env 直接写在 compose 里 + 镜像预打包"以简化部署：镜像分发改为 GitHub Actions 自动构建推 Docker Hub（S2.7）；fork 是**公开**仓库，敏感值不能进提交文件，最终方案定为 compose 内 `<...>` 示例值占位、用户在 NAS 上直接编辑 compose 填真实值（不提交）、**弃用 `.env` 文件**（S2.3/S2.4/S2.8 修订）。教训：公开仓库下"部署配置内嵌密钥"与"提交到仓库"不可兼得——占位符进仓库、真实值留在本地编辑过的文件是唯一既方便又安全的折中。
+- 用户改用 **TrueNAS Apps 的 Custom App** 部署，首次 `up` 失败（`app_lifecycle.log` 的 CallError）。根因：compose 里的 `build: context: ..` 指向仓库目录，而 Apps 把 compose 存到自己的目录运行，构建上下文缺失。修复：compose **去掉 `build:` 只留 `image:`**（纯镜像模式，与 Docker Hub 拉取一致），`run.sh` 同步去掉构建回退。教训：App 托管/CLI 部署都要用纯镜像 compose，build 只存在于 CI（GitHub Actions）里。

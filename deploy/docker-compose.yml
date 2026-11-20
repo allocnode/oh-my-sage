@@ -1,9 +1,9 @@
-# oh-my-sage MCP Server + 网页版 - Docker Compose（私有服务器 / NAS）
+# oh-my-sage MCP Server + 网页版 - Docker Compose（私有服务器 / NAS，纯镜像拉取）
 #
 # 直接编辑本文件：把 <...> 示例值替换成你的真实值，然后：
-#   本地构建：  docker compose up -d --build
-#   拉取镜像：  docker compose pull && docker compose up -d
+#   docker compose pull && docker compose up -d
 # 填好真实值后不要把本文件提交到仓库（含 API Key / 网关地址等敏感信息）。
+# 镜像由 GitHub Actions 构建推送到 Docker Hub（kevinzjyang/oh-my-sage-{mcp,web}:latest）。
 #
 # 网络要求：容器需能访问局域网内的米家网关（WebSocket），
 # 并能访问公网 miot-spec.org（校验设备能力时拉取 MIOT Spec）。
@@ -12,9 +12,6 @@
 services:
   oh-my-sage-mcp:
     image: kevinzjyang/oh-my-sage-mcp:latest
-    build:
-      context: ..
-      dockerfile: Dockerfile
     container_name: oh-my-sage-mcp
     restart: unless-stopped
     ports:
@@ -33,9 +30,6 @@ services:
 
   oh-my-sage-web:
     image: kevinzjyang/oh-my-sage-web:latest
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile.web
     container_name: oh-my-sage-web
     restart: unless-stopped
     ports:
