@@ -90,6 +90,17 @@ WEB_PORT=3000
 - 网页版：浏览器打开 `http://192.168.31.5:3000`，首次输入一次性登录码
 - MCP 容器与网页版容器各自连接网关一次，需要各自的登录码（登录码一次性）
 
+### S2.7 GitHub Actions 自动构建推送 Docker Hub
+
+- 新增 `.github/workflows/docker-images.yml`：触发为推送到部署分支 `truenas-web-docker`（tag `latest`）或打 `v*` tag（tag 版本号），支持手动触发；构建并推送两个镜像——`Dockerfile` → `oh-my-sage-mcp`，`deploy/Dockerfile.web` → `oh-my-sage-web`。
+- 仓库 Secrets 需配置 `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN`（用户 Docker Hub 账号 + 访问令牌）；未配置时 workflow 明示失败（首次运行前需在 GitHub 设置里添加）。
+
+### S2.8 compose 引用镜像 + 公开 fork 的安全约束
+
+- 两个服务增加 `image: ${DOCKERHUB_USER:-oh-my-sage}/oh-my-sage-{mcp,web}:${IMAGE_TAG:-latest}`，保留 `build:` 作为本地构建回退。
+- **约束**：fork 是公开仓库，真实敏感值（`LLM_API_KEY`、`GATEWAY_URL`、`MCP_AUTH_TOKEN`）**不得写入 compose 或任何提交文件**，只存在 NAS 上被 gitignore 的 `deploy/.env`；用户最初"env 内嵌进 compose"的诉求因公开仓库不可行，改为 `.env` 一次写入、更新不动。
+- `run.sh` 改为 `docker compose pull && docker compose up -d`（不再本地编译）。NAS 更新流程：`git pull` → root 执行 `bash deploy/run.sh`。
+
 ## [S3] Out of Scope
 
 - 不改仓库功能代码（仅 `deploy/` 下新增/修改部署文件）
@@ -105,6 +116,8 @@ WEB_PORT=3000
 - [x] T4: SSH 部署（clone、传文件、`docker compose up -d --build`） — acceptance: 两容器 `running`
 - [x] T5: 验证 — acceptance: 3790 `healthz` ok；3000 返回 200；MCP_HOSTS/认证参数与客户端配置一致
 - [x] T6: 独立 review + finalize spec — acceptance: review 通过，spec `status: delivered`
+- [x] T7: 新增 GitHub Actions 工作流（`docker-images.yml`）自动构建推送 MCP + 网页镜像到 Docker Hub — acceptance: 工作流文件随分支推送，结构校验通过（Actions 首次运行的确认需用户配置 DOCKERHUB secrets 后完成） (covers: S2.7)
+- [x] T8: compose 改为引用镜像 + `run.sh` 拉取模式 + `.env.example`/README 更新 — acceptance: `docker compose config` 通过（NAS 首次运行时确认），敏感值未进入任何提交文件 (covers: S2.8)
 
 ## Journey log
 
@@ -113,3 +126,4 @@ WEB_PORT=3000
 - MCP 会话语义验证：Streamable HTTP 下 initialize 之后需要 `Mcp-Session-Id`，用 curl 直接测 tools/list 会报 400 —— 属规范行为，真实 MCP 客户端会自动处理。
 - 网关地址排障：用户初始提供 `192.168.31.2`，但该 IP 的 80 端口是「小米路由器」管理页，`/centrallinkws/` 全部 404，网页登录报 `Unexpected server response: 404`。扫描整个 192.168.31.0/24（80/54321/9527/5666/30001/51234/8888/18080 + WS 路径探测）无设备应答，后经用户从米家 App 核对：设备是 **小米路由器 BE3600 Pro（带中枢网关功能）**，极客版自动化服务在 **`http://192.168.31.2:8086`**，`ws://192.168.31.2:8086/centrallinkws/` 握手返回 101 确认。`.env` 的 `GATEWAY_URL` 已改为 `http://192.168.31.2:8086` 并重建容器。
 - 移动端响应式 + PWA 特性（`mobile-responsive`，见同目录 `docs/compose/spec/mobile-responsive.md`）合并进本部署分支；`run.sh` 从 NAS 取回并入版本库，NAS 部署改为拉取 fork 的 `truenas-web-docker` 后以 root 执行 `bash deploy/run.sh`。本分支自此接管 fork 部署工作流（spec source 由 PR #47 改为 fork 分支）。
+- 用户要求"env 直接写在 compose 里 + 镜像预打包"以简化部署：镜像分发改为 GitHub Actions 自动构建推 Docker Hub（S2.7）；但 fork 是**公开**仓库，敏感值内嵌 compose 会泄露 API key / 网关信息，不可行——改为 compose 引用镜像 + `.env` 一次写入（S2.8）。教训：公开仓库下"部署配置内嵌密钥"与"提交到仓库"不可兼得，密钥只能留在 gitignore 的文件或 CI secrets。

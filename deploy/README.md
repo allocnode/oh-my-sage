@@ -83,7 +83,16 @@ docker compose up -d --build
 curl -s http://<服务器 IP>:3790/healthz   # {"ok":true,...} 即启动成功
 ```
 
-镜像在服务器本地从源码构建。升级：在仓库目录 `git pull`，再到 `deploy` 目录重新 `docker compose up -d --build`。
+镜像默认在服务器本地从源码构建。也可以直接拉取 Docker Hub 上的预构建镜像（部署分支 `truenas-web-docker` 的 GitHub Actions 会在推分支 / 打 `v*` tag 时自动构建并推送 `oh-my-sage-mcp`、`oh-my-sage-web` 两个镜像）：在 `deploy/.env` 设置 `DOCKERHUB_USER=<你的 Docker Hub 用户名>` 后执行：
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+升级：本地构建模式在仓库目录 `git pull` 后重新 `docker compose up -d --build`；拉取模式重复上面两条命令即可（无需在服务器上编译）。
+
+本分支的 compose 同时定义两个服务：`oh-my-sage-mcp`（Streamable HTTP `:3790`）与 `oh-my-sage-web`（网页版 `:3000`，无账号系统，勿暴露公网）。网页版环境变量也在 `deploy/.env` 设置。
 
 `deploy/.env` 需要设置：
 
@@ -93,6 +102,9 @@ curl -s http://<服务器 IP>:3790/healthz   # {"ok":true,...} 即启动成功
 | `MCP_AUTH_TOKEN` | 客户端携带的 Bearer token，`openssl rand -hex 32` 生成；**未设置会拒绝启动** |
 | `MCP_ALLOWED_HOSTS` | 客户端访问服务器时用的主机名或 IP，逗号分隔，不带端口；缺失会导致 Host 校验返回 403 |
 | `MCP_PORT` | 宿主机映射端口，默认 `3790` |
+| `LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY` | 网页版聊天用的 OpenAI 兼容接口（网页版服务需要） |
+| `WEB_PORT` | 网页版宿主机映射端口，默认 `3000` |
+| `DOCKERHUB_USER` | 拉取预构建镜像时填 Docker Hub 用户名；留空则本地构建 |
 
 镜像为多阶段构建，运行阶段只装 MCP 实际引用的依赖（约 14 MB，不含 Next.js / antd 等 Web 端依赖）。`deploy/mcp-runtime-package.mjs` 扫描编译产物生成这份最小依赖清单。
 

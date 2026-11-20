@@ -2,8 +2,10 @@
 # oh-my-sage TrueNAS 部署脚本（以 root 运行，例如 TrueNAS WebUI 的 Shell）
 set -e
 cd /home/truenas_admin/oh-my-sage/repo/deploy
-echo "=== docker compose up -d --build ==="
-docker compose up -d --build
+echo "=== docker compose pull ==="
+docker compose pull
+echo "=== docker compose up -d ==="
+docker compose up -d
 echo "=== docker compose ps ==="
 docker compose ps
 echo "=== MCP healthz ==="
