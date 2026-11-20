@@ -1,10 +1,9 @@
-# oh-my-sage MCP Server - Docker Compose 示例（私有服务器 / NAS）
+# oh-my-sage MCP Server + 网页版 - Docker Compose（私有服务器 / NAS，纯镜像拉取）
 #
-# 1. 复制 deploy/.env.example 为 deploy/.env 并修改（不要提交 .env），需要设置：
-#      GATEWAY_URL、MCP_AUTH_TOKEN、MCP_ALLOWED_HOSTS，可选 MCP_PORT（默认 3790）
-# 2. 在 deploy 目录执行 docker compose up -d --build
-# 3. 客户端以 Streamable HTTP 连接 http://<服务器>:<MCP_PORT>/mcp，
-#    并携带请求头 Authorization: Bearer <MCP_AUTH_TOKEN>
+# 直接编辑本文件：把 <...> 示例值替换成你的真实值，然后：
+#   docker compose pull && docker compose up -d
+# 填好真实值后不要把本文件提交到仓库（含 API Key / 网关地址等敏感信息）。
+# 镜像由 GitHub Actions 构建推送到 Docker Hub（kevinzjyang/oh-my-sage-{mcp,web}:latest）。
 #
 # 网络要求：容器需能访问局域网内的米家网关（WebSocket），
 # 并能访问公网 miot-spec.org（校验设备能力时拉取 MIOT Spec）。
@@ -12,21 +11,40 @@
 
 services:
   oh-my-sage-mcp:
-    build:
-      context: ..
-      dockerfile: Dockerfile
-    image: oh-my-sage-mcp:local
+    image: kevinzjyang/oh-my-sage-mcp:latest
     container_name: oh-my-sage-mcp
     restart: unless-stopped
     ports:
-      - "${MCP_PORT:-3790}:3790"
+      - "3790:3790"
     environment:
-      GATEWAY_URL: ${GATEWAY_URL:-}
-      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:?请在 .env 中设置 MCP_AUTH_TOKEN}
+      # 米家网关局域网地址，例如 http://192.168.0.5
+      GATEWAY_URL: "http://<网关 IP>"
+      # MCP 客户端携带的 Bearer token，openssl rand -hex 32 生成
+      MCP_AUTH_TOKEN: "<生成一个随机 token>"
       MCP_HTTP_HOST: 0.0.0.0
       MCP_HTTP_PORT: "3790"
       # 监听 0.0.0.0 时必须列出客户端使用的主机名/IP，否则请求会因 Host 校验返回 403
-      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:?请在 .env 中设置 MCP_ALLOWED_HOSTS}
+      MCP_ALLOWED_HOSTS: "<服务器 IP>"
     labels:
-      # 镜像在本地构建，禁止 Watchtower 尝试从镜像仓库拉取更新
       com.centurylinklabs.watchtower.enable: "false"
+
+  oh-my-sage-web:
+    image: kevinzjyang/oh-my-sage-web:latest
+    container_name: oh-my-sage-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # 网页版聊天用的 OpenAI 兼容接口（DeepSeek 等），密钥只进容器环境、不进镜像
+      LLM_BASE_URL: "https://<OpenAI 兼容接口地址>"
+      LLM_MODEL: "<模型名称>"
+      LLM_API_KEY: "<你的 API Key>"
+      GATEWAY_URL: "http://<网关 IP>"
+    volumes:
+      # 会话历史持久化，重启容器不丢
+      - oh-my-sage-web-session:/app/.sessionstore
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+
+volumes:
+  oh-my-sage-web-session:

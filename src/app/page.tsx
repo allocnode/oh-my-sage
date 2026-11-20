@@ -2,12 +2,13 @@
 
 import React, {useState, useCallback, useRef} from 'react';
 import {Layout, Typography, Space, message, Tabs} from 'antd';
-import {RobotOutlined, HomeOutlined, ApartmentOutlined, ApiOutlined} from '@ant-design/icons';
+import {RobotOutlined, HomeOutlined, ApartmentOutlined, ApiOutlined, MessageOutlined, HistoryOutlined} from '@ant-design/icons';
 import Chat from '@/components/Chat';
 import DevicePanel from '@/components/DevicePanel';
 import GraphPanel from '@/components/GraphPanel';
 import SessionPanel from '@/components/SessionPanel';
 import LoginPage from '@/components/LoginPage';
+import {useIsMobile} from '@/hooks/useMediaQuery';
 
 const {Header, Sider, Content} = Layout;
 const {Text} = Typography;
@@ -38,6 +39,15 @@ interface GraphSummary {
     lastUpdateTime?: number;
 }
 
+const MOBILE_TABS = [
+    {key: 'chat', label: '对话', icon: <MessageOutlined/>},
+    {key: 'devices', label: '设备', icon: <HomeOutlined/>},
+    {key: 'graphs', label: '规则', icon: <ApartmentOutlined/>},
+    {key: 'sessions', label: '历史', icon: <HistoryOutlined/>},
+] as const;
+
+type MobileTabKey = (typeof MOBILE_TABS)[number]['key'];
+
 export default function HomePage() {
     const [collapsed, setCollapsed] = useState(false);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -54,6 +64,9 @@ export default function HomePage() {
     const [graphs, setGraphs] = useState<GraphSummary[]>([]);
     const [graphsLoading, setGraphsLoading] = useState(false);
     const graphsLoadedRef = useRef(false);
+
+    const isMobile = useIsMobile();
+    const [mobileTab, setMobileTab] = useState<MobileTabKey>('chat');
 
     const loadDevices = useCallback(async () => {
         setDevicesLoading(true);
@@ -210,8 +223,108 @@ export default function HomePage() {
         }
     };
 
+    const handleMobileTabChange = (key: MobileTabKey) => {
+        if (key === 'graphs' && !graphsLoadedRef.current) {
+            loadGraphs();
+        }
+        setMobileTab(key);
+    };
+
+    const handleMobileSelectSession = async (sessionId: string) => {
+        await handleSelectSession(sessionId);
+        setMobileTab('chat');
+    };
+
+    const handleMobileNewSession = () => {
+        handleNewSession();
+        setMobileTab('chat');
+    };
+
     if (!isLoggedIn) {
         return <LoginPage onLoginSuccess={handleLoginSuccess}/>;
+    }
+
+    if (isMobile) {
+        return (
+            <div className="app-shell" style={{display: 'flex', flexDirection: 'column', background: 'var(--bg-deep)'}}>
+                {/* 移动端顶栏：紧凑版 */}
+                <header style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '0 16px', height: 56, flexShrink: 0,
+                    background: 'var(--bg-glass)', backdropFilter: 'blur(16px)',
+                    WebkitBackdropFilter: 'blur(16px)',
+                    borderBottom: '1px solid var(--border-subtle)',
+                    position: 'sticky', top: 0, zIndex: 100,
+                }}>
+                    <div style={{
+                        width: 32, height: 32, borderRadius: 'var(--radius-md)',
+                        background: 'var(--gradient-primary)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        boxShadow: 'var(--shadow-glow)',
+                    }}>
+                        <RobotOutlined style={{fontSize: 16, color: '#fff'}}/>
+                    </div>
+                    <span className="gradient-text" style={{fontSize: 17, fontWeight: 700, letterSpacing: -0.3}}>
+                        Oh My Sage
+                    </span>
+                </header>
+
+                {/* 面板区：全部保持挂载，按 Tab 显隐，聊天流切换不中断 */}
+                <div style={{flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column'}}>
+                    <div style={{flex: 1, minHeight: 0, display: mobileTab === 'chat' ? 'flex' : 'none', flexDirection: 'column'}}>
+                        <Chat
+                            passcode={passcode}
+                            sessionId={activeSessionId}
+                            initialMessages={currentMessages}
+                            onSessionCreated={handleSessionCreated}
+                            onResetSession={handleResetSession}
+                        />
+                    </div>
+                    <div style={{flex: 1, minHeight: 0, display: mobileTab === 'devices' ? 'flex' : 'none', flexDirection: 'column'}}>
+                        <DevicePanel
+                            devices={devices}
+                            stats={stats}
+                            loading={devicesLoading}
+                            onRefresh={loadDevices}
+                        />
+                    </div>
+                    <div style={{flex: 1, minHeight: 0, display: mobileTab === 'graphs' ? 'flex' : 'none', flexDirection: 'column'}}>
+                        <GraphPanel
+                            graphs={graphs}
+                            loading={graphsLoading}
+                            onRefresh={loadGraphs}
+                            onToggle={handleToggleGraph}
+                            onDelete={handleDeleteGraph}
+                        />
+                    </div>
+                    <div style={{flex: 1, minHeight: 0, display: mobileTab === 'sessions' ? 'flex' : 'none', flexDirection: 'column'}}>
+                        <SessionPanel
+                            sessions={sessions}
+                            activeSessionId={activeSessionId}
+                            loading={sessionsLoading}
+                            onSelectSession={handleMobileSelectSession}
+                            onDeleteSession={handleDeleteSession}
+                            onNewSession={handleMobileNewSession}
+                            onRefresh={loadSessions}
+                        />
+                    </div>
+                </div>
+
+                {/* 底部导航 */}
+                <nav className="mobile-nav">
+                    {MOBILE_TABS.map(tab => (
+                        <button
+                            key={tab.key}
+                            className={mobileTab === tab.key ? 'mobile-nav-active' : undefined}
+                            onClick={() => handleMobileTabChange(tab.key)}
+                        >
+                            {tab.icon}
+                            <span>{tab.label}</span>
+                        </button>
+                    ))}
+                </nav>
+            </div>
+        );
     }
 
     return (

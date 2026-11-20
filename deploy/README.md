@@ -76,23 +76,29 @@ powershell -ExecutionPolicy Bypass -File "$(npm root -g)/oh-my-sage-mcp/deploy/i
 ## 方式三：私有服务器（Docker）
 
 ```bash
-git clone https://github.com/allocnode/oh-my-sage.git
+git clone -b truenas-web-docker https://github.com/KevinZjYang/oh-my-sage.git
 cd oh-my-sage/deploy
-cp .env.example .env   # 填入 GATEWAY_URL、MCP_AUTH_TOKEN、MCP_ALLOWED_HOSTS
-docker compose up -d --build
+# 编辑 docker-compose.yml：把 <...> 示例值替换成真实值（GATEWAY_URL、MCP_AUTH_TOKEN、LLM_* 等）
+docker compose pull
+docker compose up -d
 curl -s http://<服务器 IP>:3790/healthz   # {"ok":true,...} 即启动成功
 ```
 
-镜像在服务器本地从源码构建。升级：在仓库目录 `git pull`，再到 `deploy` 目录重新 `docker compose up -d --build`。
+部署配置直接写在 `deploy/docker-compose.yml` 里：示例值用 `<...>` 占位，替换成真实值后直接部署，不需要 `.env` 文件。**填好真实值后不要提交该文件**（含 API Key / 网关地址等敏感信息）。
 
-`deploy/.env` 需要设置：
+镜像从 Docker Hub 拉取（纯镜像模式，不在服务器上编译）：推送到 `truenas-web-docker` 分支或打 `v*` tag 时，GitHub Actions 会自动构建并推送 `kevinzjyang/oh-my-sage-mcp`、`kevinzjyang/oh-my-sage-web` 两个镜像。升级：`git pull` 后重复 `docker compose pull && docker compose up -d` 即可。`git pull` 可能与本地改过的 compose 冲突——更新前先备份，或执行 `git update-index --skip-worktree deploy/docker-compose.yml` 让 git 不再跟踪该文件的改动。
 
-| 变量 | 说明 |
+本分支的 compose 同时定义两个服务：`oh-my-sage-mcp`（Streamable HTTP `:3790`）与 `oh-my-sage-web`（网页版 `:3000`，无账号系统，勿暴露公网）。
+
+需要替换的值（在 `deploy/docker-compose.yml` 中）：
+
+| 值 | 说明 |
 |------|------|
-| `GATEWAY_URL` | 米家网关局域网地址 |
-| `MCP_AUTH_TOKEN` | 客户端携带的 Bearer token，`openssl rand -hex 32` 生成；**未设置会拒绝启动** |
+| `GATEWAY_URL` | 米家网关局域网地址，例如 `http://192.168.0.5`（两个服务各有一处） |
+| `MCP_AUTH_TOKEN` | MCP 客户端携带的 Bearer token，`openssl rand -hex 32` 生成 |
 | `MCP_ALLOWED_HOSTS` | 客户端访问服务器时用的主机名或 IP，逗号分隔，不带端口；缺失会导致 Host 校验返回 403 |
-| `MCP_PORT` | 宿主机映射端口，默认 `3790` |
+| `LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY` | 网页版聊天用的 OpenAI 兼容接口（网页版服务需要） |
+| 两个服务的 `image:` | 镜像仓库名，已指向 `kevinzjyang/oh-my-sage-{mcp,web}:latest`，一般不用改 |
 
 镜像为多阶段构建，运行阶段只装 MCP 实际引用的依赖（约 14 MB，不含 Next.js / antd 等 Web 端依赖）。`deploy/mcp-runtime-package.mjs` 扫描编译产物生成这份最小依赖清单。
 

@@ -5,6 +5,7 @@ import {Input, Button, Space, Typography, Spin, message, Tag, Collapse} from 'an
 import {SendOutlined, LoadingOutlined, ToolOutlined, RobotOutlined, QuestionCircleOutlined, StopOutlined, RollbackOutlined, ThunderboltOutlined} from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import {useIsMobile} from '@/hooks/useMediaQuery';
 
 const {Text} = Typography;
 const {TextArea} = Input;
@@ -77,6 +78,7 @@ export default function Chat({
     const passcode = propPasscode || '';
     const prevSessionIdRef = useRef<string | undefined>(sessionId);
     const initializedRef = useRef(false);
+    const isMobile = useIsMobile();
 
     useEffect(() => {
         if (sessionId !== prevSessionIdRef.current) {
@@ -528,32 +530,34 @@ export default function Chat({
 
     return (
         <div style={{height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column'}}>
-            {/* 顶栏 */}
-            <div style={{
-                padding: '14px 20px',
-                borderBottom: '1px solid var(--border-subtle)',
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            }}>
-                <Space size={10}>
-                    <div style={{
-                        width: 28, height: 28, borderRadius: 'var(--radius-sm)',
-                        background: 'var(--gradient-primary)', display: 'flex',
-                        alignItems: 'center', justifyContent: 'center',
-                    }}>
-                        <RobotOutlined style={{fontSize: 14, color: '#fff'}}/>
-                    </div>
-                    <Text strong style={{color: 'var(--text-bright)', fontSize: 14}}>智者</Text>
-                    {isLoading && (
-                        <div style={{display: 'flex', alignItems: 'center', gap: 6}}>
-                            <Spin indicator={<LoadingOutlined style={{fontSize: 13, color: '#818cf8'}} spin/>}/>
-                            <Text style={{fontSize: 12, color: 'var(--text-muted)'}}>思考中...</Text>
+            {/* 顶栏：移动端隐藏（顶部只保留应用品牌栏） */}
+            {!isMobile && (
+                <div style={{
+                    padding: '14px 20px',
+                    borderBottom: '1px solid var(--border-subtle)',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                }}>
+                    <Space size={10}>
+                        <div style={{
+                            width: 28, height: 28, borderRadius: 'var(--radius-sm)',
+                            background: 'var(--gradient-primary)', display: 'flex',
+                            alignItems: 'center', justifyContent: 'center',
+                        }}>
+                            <RobotOutlined style={{fontSize: 14, color: '#fff'}}/>
                         </div>
-                    )}
-                </Space>
-            </div>
+                        <Text strong style={{color: 'var(--text-bright)', fontSize: 14}}>智者</Text>
+                        {isLoading && (
+                            <div style={{display: 'flex', alignItems: 'center', gap: 6}}>
+                                <Spin indicator={<LoadingOutlined style={{fontSize: 13, color: '#818cf8'}} spin/>}/>
+                                <Text style={{fontSize: 12, color: 'var(--text-muted)'}}>思考中...</Text>
+                            </div>
+                        )}
+                    </Space>
+                </div>
+            )}
 
             {/* 消息区 */}
-            <div ref={messagesContainerRef} style={{flex: 1, minHeight: 0, overflow: 'auto', padding: '20px 24px'}}>
+            <div ref={messagesContainerRef} className="chat-scroll" style={{flex: 1, minHeight: 0, overflow: 'auto', padding: '20px 24px'}}>
                 {messages.length === 0 && !isLoading && (
                     <div style={{
                         textAlign: 'center', padding: '60px 20px',
@@ -685,17 +689,23 @@ export default function Chat({
             </div>
 
             {/* 输入区 */}
-            <div style={{
+            <div className="chat-input" style={{
                 padding: '14px 20px',
                 borderTop: '1px solid var(--border-subtle)',
             }}>
+                {isMobile && isLoading && !waitingInput && (
+                    <div style={{display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, color: 'var(--text-muted)', fontSize: 12}}>
+                        <Spin indicator={<LoadingOutlined style={{fontSize: 12, color: '#818cf8'}} spin/>}/>
+                        思考中...
+                    </div>
+                )}
                 <form onSubmit={handleSubmit}>
                     <Space.Compact style={{width: '100%'}}>
                         <TextArea
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                             onKeyDown={handleKeyDown}
-                            placeholder={waitingInput ? "选择上方选项，或输入自定义回复..." : "输入消息... (Enter 发送, Shift+Enter 换行)"}
+                            placeholder={waitingInput ? "选择上方选项，或输入自定义回复..." : (isMobile ? "输入消息..." : "输入消息... (Enter 发送, Shift+Enter 换行)")}
                             autoSize={{minRows: 1, maxRows: 4}}
                             disabled={isLoading && !waitingInput}
                             style={{
