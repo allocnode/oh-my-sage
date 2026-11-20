@@ -11,8 +11,7 @@
 
 services:
   oh-my-sage-mcp:
-    # 拉取 Docker Hub 预构建镜像时改成 <你的 Docker Hub 用户名>/oh-my-sage-mcp:latest
-    image: oh-my-sage/oh-my-sage-mcp:latest
+    image: kevinzjyang/oh-my-sage-mcp:latest
     build:
       context: ..
       dockerfile: Dockerfile
@@ -33,7 +32,7 @@ services:
       com.centurylinklabs.watchtower.enable: "false"
 
   oh-my-sage-web:
-    image: oh-my-sage/oh-my-sage-web:latest
+    image: kevinzjyang/oh-my-sage-web:latest
     build:
       context: ..
       dockerfile: deploy/Dockerfile.web
