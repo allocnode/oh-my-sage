@@ -1,0 +1,105 @@
+---
+feature: truenas-deploy
+status: in-progress
+updated: 2026-11-20
+source: truenas-deploy
+---
+
+# TrueNAS Docker 部署（MCP + 网页版）
+
+## Report
+[Not finalized yet]
+
+## [S1] Problem
+
+用户要在自己的 TrueNAS SCALE（24.10+）上部署 oh-my-sage 两个部分：
+
+1. **MCP 常驻服务**（Streamable HTTP，端口 3790）：局域网内所有 AI Agent（Claude Code、Cursor 等）共用一次网关登录。
+2. **网页版**（端口 3000）：浏览器直接聊天，用 DeepSeek 大模型 API。
+
+官方仓库只提供了 MCP 容器的 `Dockerfile` 和 `deploy/docker-compose.yml`；网页版没有 Docker 镜像，需要新增 `Dockerfile.web` 并扩展 compose。
+
+环境事实（用户提供）：
+
+- 米家中枢网关：`192.168.31.2`（极客版已开启）
+- TrueNAS：`192.168.31.5`，SSH 端口 22，用户 `truenas_admin`，密码登录
+- LLM：DeepSeek，`https://api.deepseek.com/v1`，模型 `deepseek-flash`
+- 部署方式：SSH 直接在 NAS 上 `docker compose up -d --build`
+- 本机（Windows）无 Docker，镜像在 NAS 上构建
+
+## [S2] Design
+
+### S2.1 新增 `deploy/Dockerfile.web`
+
+多阶段构建 Next.js 网页版：
+
+- build 阶段：`node:22-alpine`，`npm ci --ignore-scripts --no-audit --no-fund`，`npm run build`
+- runtime 阶段：`node:22-alpine`，复制 `package.json`、`node_modules`、`.next`、`next.config.js`；预建 `/app/.sessionstore` 并 `chown node:node`（会话存储写 `process.cwd()/.sessionstore`，见 `src/server/session/store.ts`）；`USER node`；`EXPOSE 3000`；`CMD ["npm","start"]`
+- 不需要复制 `src/`（已编译进 `.next`）和 `public/`（仓库没有该目录）
+- 环境变量 `LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY` / `GATEWAY_URL` 由 compose `environment:` 在**运行时**注入——服务端代码是运行时读 `process.env`（`src/server/ai/model.ts`），不写进镜像层，避免密钥进镜像历史
+- 会话存储挂命名卷 `/app/.sessionstore`，容器重启不丢对话
+
+### S2.2 扩展 `deploy/docker-compose.yml`
+
+保留官方 `oh-my-sage-mcp` 服务不动，新增 `oh-my-sage-web`：
+
+- build context 为仓库根，`dockerfile: deploy/Dockerfile.web`
+- 端口 `${WEB_PORT:-3000}:3000`
+- `environment:` 注入四个 LLM/网关变量，缺失时用 `${VAR:?...}` 让 compose 报错拒绝启动
+- `restart: unless-stopped`，`watchtower.enable=false` 标签（本地构建镜像）
+
+### S2.3 NAS 上的 `deploy/.env`（不入库）
+
+`.gitignore` 已忽略 `.env`。内容（真实值只存在于 NAS 文件系统）：
+
+```
+GATEWAY_URL=http://192.168.31.2
+MCP_AUTH_TOKEN=<openssl rand -hex 32 生成>
+MCP_ALLOWED_HOSTS=192.168.31.5
+MCP_PORT=3790
+LLM_BASE_URL=https://api.deepseek.com/v1
+LLM_MODEL=deepseek-flash
+LLM_API_KEY=<用户提供>
+WEB_PORT=3000
+```
+
+### S2.4 更新 `deploy/.env.example`
+
+新增网页版变量，保持占位符风格（遵循仓库 AGENTS.md：不在用户复制的配置里写具体 IP / 密钥 / token）。
+
+### S2.5 NAS 部署路径与步骤
+
+仓库放 `/mnt/<pool>/apps/oh-my-sage`（SSH 登录后先 `zfs list` 看池名，无法建目录则退回 `/root/oh-my-sage`）。步骤：
+
+1. 确认 `docker` 与 compose 插件可用（TrueNAS Apps 服务需已启用；未启用则提示用户在 UI 开启）
+2. `git clone https://github.com/allocnode/oh-my-sage.git`
+3. 写入 `deploy/.env`（含生成的 token）
+4. 写入 `deploy/Dockerfile.web`、覆盖 `deploy/docker-compose.yml`（从本地 worktree 用 scp 传输，或 apply git 分支）
+5. `docker compose up -d --build`
+6. `curl http://127.0.0.1:3790/healthz` 与 `curl -I http://127.0.0.1:3000` 验证
+
+### S2.6 客户端接入
+
+- MCP：`http://192.168.31.5:3790/mcp`，请求头 `Authorization: Bearer <MCP_AUTH_TOKEN>`；客户端配置见仓库 `deploy/README.md`
+- 网页版：浏览器打开 `http://192.168.31.5:3000`，首次输入一次性登录码
+- MCP 容器与网页版容器各自连接网关一次，需要各自的登录码（登录码一次性）
+
+## [S3] Out of Scope
+
+- 不改仓库功能代码（仅 `deploy/` 下新增/修改部署文件）
+- 不推送分支、不开 PR（除非用户要求）
+- 不把网页版暴露公网（官方明令网页版无账号系统）
+- 不用 TrueNAS Apps UI 安装成托管应用；SSH 的 `docker compose` 部署即可运行，容器不进入 Apps 管理列表
+
+## Tasks
+
+- [ ] T1: 新增 `deploy/Dockerfile.web` — acceptance: NAS 上 `docker build` 成功（随 compose 一起验证）
+- [ ] T2: 扩展 `deploy/docker-compose.yml` — acceptance: NAS 上 `docker compose config` 通过，双服务定义正确
+- [ ] T3: 写 NAS `deploy/.env`（真实值 + 生成的 token） — acceptance: 双容器启动后 `healthz` 返回 `{"ok":true}`、网页版 HTTP 200
+- [ ] T4: SSH 部署（clone、传文件、`docker compose up -d --build`） — acceptance: 两容器 `running`
+- [ ] T5: 验证 — acceptance: 3790 `healthz` ok；3000 返回 200；MCP_HOSTS/认证参数与客户端配置一致
+- [ ] T6: 独立 review + finalize spec — acceptance: review 通过，spec `status: delivered`
+
+## Journey log
+
+None

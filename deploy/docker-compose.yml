@@ -1,10 +1,12 @@
-# oh-my-sage MCP Server - Docker Compose 示例（私有服务器 / NAS）
+# oh-my-sage MCP Server + 网页版 - Docker Compose（私有服务器 / NAS）
 #
 # 1. 复制 deploy/.env.example 为 deploy/.env 并修改（不要提交 .env），需要设置：
-#      GATEWAY_URL、MCP_AUTH_TOKEN、MCP_ALLOWED_HOSTS，可选 MCP_PORT（默认 3790）
+#      GATEWAY_URL、MCP_AUTH_TOKEN、MCP_ALLOWED_HOSTS，可选 MCP_PORT（默认 3790）；
+#      网页版另需 LLM_BASE_URL、LLM_MODEL、LLM_API_KEY，可选 WEB_PORT（默认 3000）
 # 2. 在 deploy 目录执行 docker compose up -d --build
-# 3. 客户端以 Streamable HTTP 连接 http://<服务器>:<MCP_PORT>/mcp，
+# 3. MCP 客户端以 Streamable HTTP 连接 http://<服务器>:<MCP_PORT>/mcp，
 #    并携带请求头 Authorization: Bearer <MCP_AUTH_TOKEN>
+# 4. 网页版浏览器访问 http://<服务器>:<WEB_PORT>（无账号系统，勿暴露公网）
 #
 # 网络要求：容器需能访问局域网内的米家网关（WebSocket），
 # 并能访问公网 miot-spec.org（校验设备能力时拉取 MIOT Spec）。
@@ -30,3 +32,27 @@ services:
     labels:
       # 镜像在本地构建，禁止 Watchtower 尝试从镜像仓库拉取更新
       com.centurylinklabs.watchtower.enable: "false"
+
+  oh-my-sage-web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+    image: oh-my-sage-web:local
+    container_name: oh-my-sage-web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    environment:
+      # 服务端在运行时读 process.env，密钥只进容器环境，不进镜像层
+      LLM_BASE_URL: ${LLM_BASE_URL:?请在 .env 中设置 LLM_BASE_URL}
+      LLM_MODEL: ${LLM_MODEL:?请在 .env 中设置 LLM_MODEL}
+      LLM_API_KEY: ${LLM_API_KEY:?请在 .env 中设置 LLM_API_KEY}
+      GATEWAY_URL: ${GATEWAY_URL:?请在 .env 中设置 GATEWAY_URL}
+    volumes:
+      # 会话历史持久化，重启容器不丢
+      - oh-my-sage-web-session:/app/.sessionstore
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+
+volumes:
+  oh-my-sage-web-session:
