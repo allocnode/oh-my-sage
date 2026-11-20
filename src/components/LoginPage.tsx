@@ -54,6 +54,7 @@ export default function LoginPage({onLoginSuccess}: LoginPageProps) {
             height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center',
             background: 'var(--bg-deep)',
             position: 'relative', overflow: 'hidden',
+            padding: '0 20px',
         }}>
             {/* 动态背景光效 */}
             <div style={{
@@ -77,7 +78,9 @@ export default function LoginPage({onLoginSuccess}: LoginPageProps) {
             <div
                 className="glass-panel"
                 style={{
-                    width: 380, padding: '40px 36px',
+                    width: '100%',
+                    maxWidth: 380,
+                    padding: '40px 36px',
                     borderRadius: 'var(--radius-xl)',
                     textAlign: 'center',
                     position: 'relative', zIndex: 1,

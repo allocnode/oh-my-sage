@@ -553,7 +553,7 @@ export default function Chat({
             </div>
 
             {/* 消息区 */}
-            <div ref={messagesContainerRef} style={{flex: 1, minHeight: 0, overflow: 'auto', padding: '20px 24px'}}>
+            <div ref={messagesContainerRef} className="chat-scroll" style={{flex: 1, minHeight: 0, overflow: 'auto', padding: '20px 24px'}}>
                 {messages.length === 0 && !isLoading && (
                     <div style={{
                         textAlign: 'center', padding: '60px 20px',
@@ -685,7 +685,7 @@ export default function Chat({
             </div>
 
             {/* 输入区 */}
-            <div style={{
+            <div className="chat-input" style={{
                 padding: '14px 20px',
                 borderTop: '1px solid var(--border-subtle)',
             }}>
