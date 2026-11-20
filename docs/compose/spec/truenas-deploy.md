@@ -2,7 +2,7 @@
 feature: truenas-deploy
 status: delivered
 updated: 2026-11-20
-source: https://github.com/allocnode/oh-my-sage/pull/47
+source: https://github.com/KevinZjYang/oh-my-sage/tree/truenas-web-docker
 ---
 
 # TrueNAS Docker 部署（MCP + 网页版）
@@ -112,3 +112,4 @@ WEB_PORT=3000
 - 仓库实际部署路径定为 `/home/truenas_admin/oh-my-sage/repo`（S2.5 计划是 `/mnt/<pool>/apps/...`，因非 root 无法在数据池建目录/改 ACL 而简化）。
 - MCP 会话语义验证：Streamable HTTP 下 initialize 之后需要 `Mcp-Session-Id`，用 curl 直接测 tools/list 会报 400 —— 属规范行为，真实 MCP 客户端会自动处理。
 - 网关地址排障：用户初始提供 `192.168.31.2`，但该 IP 的 80 端口是「小米路由器」管理页，`/centrallinkws/` 全部 404，网页登录报 `Unexpected server response: 404`。扫描整个 192.168.31.0/24（80/54321/9527/5666/30001/51234/8888/18080 + WS 路径探测）无设备应答，后经用户从米家 App 核对：设备是 **小米路由器 BE3600 Pro（带中枢网关功能）**，极客版自动化服务在 **`http://192.168.31.2:8086`**，`ws://192.168.31.2:8086/centrallinkws/` 握手返回 101 确认。`.env` 的 `GATEWAY_URL` 已改为 `http://192.168.31.2:8086` 并重建容器。
+- 移动端响应式 + PWA 特性（`mobile-responsive`，见同目录 `docs/compose/spec/mobile-responsive.md`）合并进本部署分支；`run.sh` 从 NAS 取回并入版本库，NAS 部署改为拉取 fork 的 `truenas-web-docker` 后以 root 执行 `bash deploy/run.sh`。本分支自此接管 fork 部署工作流（spec source 由 PR #47 改为 fork 分支）。
