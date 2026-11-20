@@ -1,15 +1,9 @@
 # oh-my-sage MCP Server + 网页版 - Docker Compose（私有服务器 / NAS）
 #
-# 1. 复制 deploy/.env.example 为 deploy/.env 并修改（不要提交 .env），需要设置：
-#      GATEWAY_URL、MCP_AUTH_TOKEN、MCP_ALLOWED_HOSTS，可选 MCP_PORT（默认 3790）；
-#      网页版另需 LLM_BASE_URL、LLM_MODEL、LLM_API_KEY，可选 WEB_PORT（默认 3000）
-# 2. 两种部署方式：
-#      - 拉取预构建镜像（推荐）：GitHub Actions 已把镜像推到 Docker Hub，.env 里设置 DOCKERHUB_USER，
-#        然后 docker compose pull && docker compose up -d，更新只需重复这条命令
-#      - 本地构建：docker compose up -d --build（不设置 DOCKERHUB_USER 时镜像名回退 oh-my-sage/...）
-# 3. MCP 客户端以 Streamable HTTP 连接 http://<服务器>:<MCP_PORT>/mcp，
-#    并携带请求头 Authorization: Bearer <MCP_AUTH_TOKEN>
-# 4. 网页版浏览器访问 http://<服务器>:<WEB_PORT>（无账号系统，勿暴露公网）
+# 直接编辑本文件：把 <...> 示例值替换成你的真实值，然后：
+#   本地构建：  docker compose up -d --build
+#   拉取镜像：  docker compose pull && docker compose up -d
+# 填好真实值后不要把本文件提交到仓库（含 API Key / 网关地址等敏感信息）。
 #
 # 网络要求：容器需能访问局域网内的米家网关（WebSocket），
 # 并能访问公网 miot-spec.org（校验设备能力时拉取 MIOT Spec）。
@@ -17,40 +11,42 @@
 
 services:
   oh-my-sage-mcp:
-    image: ${DOCKERHUB_USER:-oh-my-sage}/oh-my-sage-mcp:${IMAGE_TAG:-latest}
+    # 拉取 Docker Hub 预构建镜像时改成 <你的 Docker Hub 用户名>/oh-my-sage-mcp:latest
+    image: oh-my-sage/oh-my-sage-mcp:latest
     build:
       context: ..
       dockerfile: Dockerfile
     container_name: oh-my-sage-mcp
     restart: unless-stopped
     ports:
-      - "${MCP_PORT:-3790}:3790"
+      - "3790:3790"
     environment:
-      GATEWAY_URL: ${GATEWAY_URL:-}
-      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:?请在 .env 中设置 MCP_AUTH_TOKEN}
+      # 米家网关局域网地址，例如 http://192.168.0.5
+      GATEWAY_URL: "http://<网关 IP>"
+      # MCP 客户端携带的 Bearer token，openssl rand -hex 32 生成
+      MCP_AUTH_TOKEN: "<生成一个随机 token>"
       MCP_HTTP_HOST: 0.0.0.0
       MCP_HTTP_PORT: "3790"
       # 监听 0.0.0.0 时必须列出客户端使用的主机名/IP，否则请求会因 Host 校验返回 403
-      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:?请在 .env 中设置 MCP_ALLOWED_HOSTS}
+      MCP_ALLOWED_HOSTS: "<服务器 IP>"
     labels:
-      # 镜像在本地构建，禁止 Watchtower 尝试从镜像仓库拉取更新
       com.centurylinklabs.watchtower.enable: "false"
 
   oh-my-sage-web:
-    image: ${DOCKERHUB_USER:-oh-my-sage}/oh-my-sage-web:${IMAGE_TAG:-latest}
+    image: oh-my-sage/oh-my-sage-web:latest
     build:
       context: ..
       dockerfile: deploy/Dockerfile.web
     container_name: oh-my-sage-web
     restart: unless-stopped
     ports:
-      - "${WEB_PORT:-3000}:3000"
+      - "3000:3000"
     environment:
-      # 服务端在运行时读 process.env，密钥只进容器环境，不进镜像层
-      LLM_BASE_URL: ${LLM_BASE_URL:?请在 .env 中设置 LLM_BASE_URL}
-      LLM_MODEL: ${LLM_MODEL:?请在 .env 中设置 LLM_MODEL}
-      LLM_API_KEY: ${LLM_API_KEY:?请在 .env 中设置 LLM_API_KEY}
-      GATEWAY_URL: ${GATEWAY_URL:?请在 .env 中设置 GATEWAY_URL}
+      # 网页版聊天用的 OpenAI 兼容接口（DeepSeek 等），密钥只进容器环境、不进镜像
+      LLM_BASE_URL: "https://<OpenAI 兼容接口地址>"
+      LLM_MODEL: "<模型名称>"
+      LLM_API_KEY: "<你的 API Key>"
+      GATEWAY_URL: "http://<网关 IP>"
     volumes:
       # 会话历史持久化，重启容器不丢
       - oh-my-sage-web-session:/app/.sessionstore

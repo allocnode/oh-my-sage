@@ -9,7 +9,7 @@ source: https://github.com/KevinZjYang/oh-my-sage/tree/truenas-web-docker
 
 ## Report
 
-**What was built** — 为 oh-my-sage 在 TrueNAS SCALE 上部署 MCP 常驻服务与网页版：新增 `deploy/Dockerfile.web`（Next.js 多阶段镜像，运行时只带编译产物与依赖、预建 `.sessionstore`、HEALTHCHECK），扩展 `deploy/docker-compose.yml` 增加 `oh-my-sage-web` 服务（运行时注入 LLM/网关环境变量、命名卷持久化会话），更新 `deploy/.env.example`。实际部署在 NAS 的 `/home/truenas_admin/oh-my-sage/repo`，`docker compose up -d --build` 后双容器运行：MCP `:3790`、网页版 `:3000`。
+**What was built** — 为 oh-my-sage 在 TrueNAS SCALE 上部署 MCP 常驻服务与网页版：新增 `deploy/Dockerfile.web`（Next.js 多阶段镜像，运行时只带编译产物与依赖、预建 `.sessionstore`、HEALTHCHECK），扩展 `deploy/docker-compose.yml` 增加 `oh-my-sage-web` 服务（运行时注入 LLM/网关环境变量、命名卷持久化会话），部署配置以 `<...>` 示例值内嵌 compose（弃用 `.env`，移除 `deploy/.env.example`）。实际部署在 NAS 的 `/home/truenas_admin/oh-my-sage/repo`，双容器运行：MCP `:3790`、网页版 `:3000`。
 
 **Verification** —
 - NAS 与局域网双侧 curl：MCP `/healthz` → `{"ok":true}`；网页版 → HTTP 200
@@ -54,24 +54,13 @@ source: https://github.com/KevinZjYang/oh-my-sage/tree/truenas-web-docker
 - `environment:` 注入四个 LLM/网关变量，缺失时用 `${VAR:?...}` 让 compose 报错拒绝启动
 - `restart: unless-stopped`，`watchtower.enable=false` 标签（本地构建镜像）
 
-### S2.3 NAS 上的 `deploy/.env`（不入库）
+### S2.3 配置直接写在 `deploy/docker-compose.yml`（示例值，不入库）
 
-`.gitignore` 已忽略 `.env`。内容（真实值只存在于 NAS 文件系统）：
+不使用 `.env` 文件（用户决策）：compose 里直接写 `<...>` 示例值占位，用户在 NAS 上编辑 compose 替换成真实值后 `docker compose up -d` 部署。示例值保持占位符风格（遵循仓库 AGENTS.md：不在用户复制的配置里写具体 IP / 密钥 / token；具体值只以"例如"形式出现在注释里）。填好真实值后不提交 compose。
 
-```
-GATEWAY_URL=http://192.168.31.2
-MCP_AUTH_TOKEN=<openssl rand -hex 32 生成>
-MCP_ALLOWED_HOSTS=192.168.31.5
-MCP_PORT=3790
-LLM_BASE_URL=https://api.deepseek.com/v1
-LLM_MODEL=deepseek-flash
-LLM_API_KEY=<用户提供>
-WEB_PORT=3000
-```
+### S2.4 移除 `deploy/.env.example`
 
-### S2.4 更新 `deploy/.env.example`
-
-新增网页版变量，保持占位符风格（遵循仓库 AGENTS.md：不在用户复制的配置里写具体 IP / 密钥 / token）。
+不再需要 `.env` 机制后，删除 `deploy/.env.example`；配置项说明并入 compose 注释与 `deploy/README.md` 的值表。
 
 ### S2.5 NAS 部署路径与步骤
 
@@ -79,7 +68,7 @@ WEB_PORT=3000
 
 1. 确认 `docker` 与 compose 插件可用（TrueNAS Apps 服务需已启用；未启用则提示用户在 UI 开启）
 2. `git clone https://github.com/allocnode/oh-my-sage.git`
-3. 写入 `deploy/.env`（含生成的 token）
+3. 在 `deploy/docker-compose.yml` 填入真实值（含生成的 token）
 4. 写入 `deploy/Dockerfile.web`、覆盖 `deploy/docker-compose.yml`（从本地 worktree 用 scp 传输，或 apply git 分支）
 5. `docker compose up -d --build`
 6. `curl http://127.0.0.1:3790/healthz` 与 `curl -I http://127.0.0.1:3000` 验证
@@ -97,9 +86,9 @@ WEB_PORT=3000
 
 ### S2.8 compose 引用镜像 + 公开 fork 的安全约束
 
-- 两个服务增加 `image: ${DOCKERHUB_USER:-oh-my-sage}/oh-my-sage-{mcp,web}:${IMAGE_TAG:-latest}`，保留 `build:` 作为本地构建回退。
-- **约束**：fork 是公开仓库，真实敏感值（`LLM_API_KEY`、`GATEWAY_URL`、`MCP_AUTH_TOKEN`）**不得写入 compose 或任何提交文件**，只存在 NAS 上被 gitignore 的 `deploy/.env`；用户最初"env 内嵌进 compose"的诉求因公开仓库不可行，改为 `.env` 一次写入、更新不动。
-- `run.sh` 改为 `docker compose pull && docker compose up -d`（不再本地编译）。NAS 更新流程：`git pull` → root 执行 `bash deploy/run.sh`。
+- 两个服务增加 `image: oh-my-sage/oh-my-sage-{mcp,web}:latest`（拉取模式改成 `<你的 Docker Hub 用户名>/oh-my-sage-{mcp,web}:latest`），保留 `build:` 作为本地构建回退。
+- **约束**：fork 是公开仓库，真实敏感值（`LLM_API_KEY`、`GATEWAY_URL`、`MCP_AUTH_TOKEN`）**不得出现在任何提交文件中**——compose 只提交 `<...>` 示例值，真实值由用户在 NAS 上编辑 compose 时填入，填好后不提交（配合 `git update-index --skip-worktree deploy/docker-compose.yml` 可让更新不受本地修改影响）。用户最终选择：不用 `.env`，全部配置内嵌 compose。
+- `run.sh` 优先 `docker compose pull`（拉取失败自动回退 `up -d --build` 本地构建）。NAS 更新流程：`git pull` → root 执行 `bash deploy/run.sh`。
 
 ## [S3] Out of Scope
 
@@ -112,12 +101,12 @@ WEB_PORT=3000
 
 - [x] T1: 新增 `deploy/Dockerfile.web` — acceptance: NAS 上 `docker build` 成功（随 compose 一起验证）
 - [x] T2: 扩展 `deploy/docker-compose.yml` — acceptance: NAS 上 `docker compose config` 通过，双服务定义正确
-- [x] T3: 写 NAS `deploy/.env`（真实值 + 生成的 token） — acceptance: 双容器启动后 `healthz` 返回 `{"ok":true}`、网页版 HTTP 200
+- [x] T3: 在 NAS 的 compose 中填入真实值（网关地址、生成的 token、LLM 配置） — acceptance: 双容器启动后 `healthz` 返回 `{"ok":true}`、网页版 HTTP 200
 - [x] T4: SSH 部署（clone、传文件、`docker compose up -d --build`） — acceptance: 两容器 `running`
 - [x] T5: 验证 — acceptance: 3790 `healthz` ok；3000 返回 200；MCP_HOSTS/认证参数与客户端配置一致
 - [x] T6: 独立 review + finalize spec — acceptance: review 通过，spec `status: delivered`
 - [x] T7: 新增 GitHub Actions 工作流（`docker-images.yml`）自动构建推送 MCP + 网页镜像到 Docker Hub — acceptance: 工作流文件随分支推送，结构校验通过（Actions 首次运行的确认需用户配置 DOCKERHUB secrets 后完成） (covers: S2.7)
-- [x] T8: compose 改为引用镜像 + `run.sh` 拉取模式 + `.env.example`/README 更新 — acceptance: `docker compose config` 通过（NAS 首次运行时确认），敏感值未进入任何提交文件 (covers: S2.8)
+- [x] T8: compose 改为引用镜像 + `run.sh` 拉取/构建回退 + README 更新 + 移除 `.env.example` — acceptance: 敏感值未进入任何提交文件（提交内容仅占位符），NAS 首次运行时 `docker compose config` 通过 (covers: S2.8)
 
 ## Journey log
 
@@ -126,4 +115,4 @@ WEB_PORT=3000
 - MCP 会话语义验证：Streamable HTTP 下 initialize 之后需要 `Mcp-Session-Id`，用 curl 直接测 tools/list 会报 400 —— 属规范行为，真实 MCP 客户端会自动处理。
 - 网关地址排障：用户初始提供 `192.168.31.2`，但该 IP 的 80 端口是「小米路由器」管理页，`/centrallinkws/` 全部 404，网页登录报 `Unexpected server response: 404`。扫描整个 192.168.31.0/24（80/54321/9527/5666/30001/51234/8888/18080 + WS 路径探测）无设备应答，后经用户从米家 App 核对：设备是 **小米路由器 BE3600 Pro（带中枢网关功能）**，极客版自动化服务在 **`http://192.168.31.2:8086`**，`ws://192.168.31.2:8086/centrallinkws/` 握手返回 101 确认。`.env` 的 `GATEWAY_URL` 已改为 `http://192.168.31.2:8086` 并重建容器。
 - 移动端响应式 + PWA 特性（`mobile-responsive`，见同目录 `docs/compose/spec/mobile-responsive.md`）合并进本部署分支；`run.sh` 从 NAS 取回并入版本库，NAS 部署改为拉取 fork 的 `truenas-web-docker` 后以 root 执行 `bash deploy/run.sh`。本分支自此接管 fork 部署工作流（spec source 由 PR #47 改为 fork 分支）。
-- 用户要求"env 直接写在 compose 里 + 镜像预打包"以简化部署：镜像分发改为 GitHub Actions 自动构建推 Docker Hub（S2.7）；但 fork 是**公开**仓库，敏感值内嵌 compose 会泄露 API key / 网关信息，不可行——改为 compose 引用镜像 + `.env` 一次写入（S2.8）。教训：公开仓库下"部署配置内嵌密钥"与"提交到仓库"不可兼得，密钥只能留在 gitignore 的文件或 CI secrets。
+- 用户要求"env 直接写在 compose 里 + 镜像预打包"以简化部署：镜像分发改为 GitHub Actions 自动构建推 Docker Hub（S2.7）；fork 是**公开**仓库，敏感值不能进提交文件，最终方案定为 compose 内 `<...>` 示例值占位、用户在 NAS 上直接编辑 compose 填真实值（不提交）、**弃用 `.env` 文件**（S2.3/S2.4/S2.8 修订）。教训：公开仓库下"部署配置内嵌密钥"与"提交到仓库"不可兼得——占位符进仓库、真实值留在本地编辑过的文件是唯一既方便又安全的折中。

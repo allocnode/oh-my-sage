@@ -78,33 +78,33 @@ powershell -ExecutionPolicy Bypass -File "$(npm root -g)/oh-my-sage-mcp/deploy/i
 ```bash
 git clone https://github.com/allocnode/oh-my-sage.git
 cd oh-my-sage/deploy
-cp .env.example .env   # 填入 GATEWAY_URL、MCP_AUTH_TOKEN、MCP_ALLOWED_HOSTS
+# 编辑 docker-compose.yml：把 <...> 示例值替换成真实值（GATEWAY_URL、MCP_AUTH_TOKEN、LLM_* 等）
 docker compose up -d --build
 curl -s http://<服务器 IP>:3790/healthz   # {"ok":true,...} 即启动成功
 ```
 
-镜像默认在服务器本地从源码构建。也可以直接拉取 Docker Hub 上的预构建镜像（部署分支 `truenas-web-docker` 的 GitHub Actions 会在推分支 / 打 `v*` tag 时自动构建并推送 `oh-my-sage-mcp`、`oh-my-sage-web` 两个镜像）：在 `deploy/.env` 设置 `DOCKERHUB_USER=<你的 Docker Hub 用户名>` 后执行：
+部署配置直接写在 `deploy/docker-compose.yml` 里：示例值用 `<...>` 占位，替换成真实值后直接部署，不需要 `.env` 文件。**填好真实值后不要提交该文件**（含 API Key / 网关地址等敏感信息）。
+
+镜像默认在服务器本地从源码构建。也可以拉取 Docker Hub 上的预构建镜像（部署分支 `truenas-web-docker` 的 GitHub Actions 会在推分支 / 打 `v*` tag 时自动构建并推送 `oh-my-sage-mcp`、`oh-my-sage-web` 两个镜像）：把两个服务的 `image:` 改成 `<你的 Docker Hub 用户名>/oh-my-sage-{mcp,web}:latest` 后执行：
 
 ```bash
 docker compose pull
 docker compose up -d
 ```
 
-升级：本地构建模式在仓库目录 `git pull` 后重新 `docker compose up -d --build`；拉取模式重复上面两条命令即可（无需在服务器上编译）。
+升级：本地构建模式在仓库目录 `git pull` 后重新 `docker compose up -d --build`；拉取模式重复上面两条命令即可（无需在服务器上编译）。`git pull` 可能与本地改过的 compose 冲突——更新前先备份，或执行 `git update-index --skip-worktree deploy/docker-compose.yml` 让 git 不再跟踪该文件的改动。
 
-本分支的 compose 同时定义两个服务：`oh-my-sage-mcp`（Streamable HTTP `:3790`）与 `oh-my-sage-web`（网页版 `:3000`，无账号系统，勿暴露公网）。网页版环境变量也在 `deploy/.env` 设置。
+本分支的 compose 同时定义两个服务：`oh-my-sage-mcp`（Streamable HTTP `:3790`）与 `oh-my-sage-web`（网页版 `:3000`，无账号系统，勿暴露公网）。
 
-`deploy/.env` 需要设置：
+需要替换的值（在 `deploy/docker-compose.yml` 中）：
 
-| 变量 | 说明 |
+| 值 | 说明 |
 |------|------|
-| `GATEWAY_URL` | 米家网关局域网地址 |
-| `MCP_AUTH_TOKEN` | 客户端携带的 Bearer token，`openssl rand -hex 32` 生成；**未设置会拒绝启动** |
+| `GATEWAY_URL` | 米家网关局域网地址，例如 `http://192.168.0.5`（两个服务各有一处） |
+| `MCP_AUTH_TOKEN` | MCP 客户端携带的 Bearer token，`openssl rand -hex 32` 生成 |
 | `MCP_ALLOWED_HOSTS` | 客户端访问服务器时用的主机名或 IP，逗号分隔，不带端口；缺失会导致 Host 校验返回 403 |
-| `MCP_PORT` | 宿主机映射端口，默认 `3790` |
 | `LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY` | 网页版聊天用的 OpenAI 兼容接口（网页版服务需要） |
-| `WEB_PORT` | 网页版宿主机映射端口，默认 `3000` |
-| `DOCKERHUB_USER` | 拉取预构建镜像时填 Docker Hub 用户名；留空则本地构建 |
+| 两个服务的 `image:` | 拉取 Docker Hub 镜像时填你的 Docker Hub 用户名；本地构建可不改 |
 
 镜像为多阶段构建，运行阶段只装 MCP 实际引用的依赖（约 14 MB，不含 Next.js / antd 等 Web 端依赖）。`deploy/mcp-runtime-package.mjs` 扫描编译产物生成这份最小依赖清单。
 
