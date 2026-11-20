@@ -77,7 +77,7 @@ export default function GraphPanel({
     return (
         <div style={{height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column'}}>
             {/* 头部 */}
-            <div style={{padding: '12px 0', borderBottom: '1px solid #f0f0f0'}}>
+            <div style={{padding: '12px 0', borderBottom: '1px solid var(--border-subtle)'}}>
                 <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                     <Text strong>自动化规则</Text>
                     <Button
@@ -116,7 +116,7 @@ export default function GraphPanel({
                             key={graph.id}
                             style={{
                                 padding: '12px 0',
-                                borderBottom: '1px solid #f5f5f5',
+                                borderBottom: '1px solid var(--border-subtle)',
                             }}
                         >
                             <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start'}}>
