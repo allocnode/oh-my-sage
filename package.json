@@ -2,7 +2,6 @@
   "name": "oh-my-sage",
   "version": "0.1.4",
   "private": true,
-
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -11,7 +10,8 @@
     "lint": "next lint",
     "test": "npx tsx src/test.ts",
     "test:unit": "tsx --test tests/**/*.test.ts",
-    "build:npm": "npm run build:mcp && node scripts/build-npm-package.mjs"
+    "build:npm": "npm run build:mcp && node scripts/build-npm-package.mjs",
+    "generate:icons": "node scripts/generate-icons.mjs"
   },
   "bin": {
     "oh-my-sage-mcp": "./dist/mcp/mcp/index.js"
@@ -20,6 +20,7 @@
     "@ai-sdk/anthropic": "^0.0.51",
     "@ai-sdk/openai": "^0.0.58",
     "@ant-design/icons": "^5.4.0",
+    "@ducanh2912/next-pwa": "^10.2.9",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "ai": "^3.4.0",
     "antd": "^5.21.0",
@@ -47,6 +48,7 @@
     "@types/ws": "^8.5.0",
     "eslint": "^8.57.0",
     "eslint-config-next": "^14.2.0",
+    "sharp": "^0.35.5",
     "tsx": "^4.21.0",
     "typescript": "^5.6.0"
   }

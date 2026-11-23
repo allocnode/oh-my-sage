@@ -1,8 +1,9 @@
 'use client';
 
 import React, {useState, useCallback, useRef} from 'react';
-import {Input, Button, message, Typography} from 'antd';
-import {LockOutlined, ThunderboltFilled} from '@ant-design/icons';
+import {Input, Button, message, Typography, Dropdown} from 'antd';
+import {LockOutlined, ThunderboltFilled, SunOutlined, MoonOutlined, DesktopOutlined, CheckOutlined} from '@ant-design/icons';
+import {useTheme, ThemeMode} from '@/components/ThemeProvider';
 
 const {Text} = Typography;
 
@@ -11,6 +12,7 @@ interface LoginPageProps {
 }
 
 export default function LoginPage({onLoginSuccess}: LoginPageProps) {
+    const {theme, setTheme} = useTheme();
     const [passcode, setPasscode] = useState('');
     const [loading, setLoading] = useState(false);
     const isLoggingRef = useRef(false);
@@ -56,6 +58,40 @@ export default function LoginPage({onLoginSuccess}: LoginPageProps) {
             position: 'relative', overflow: 'hidden',
             padding: '0 20px',
         }}>
+            {/* 主题切换（登录页角落） */}
+            <div style={{position: 'absolute', top: 16, right: 16, zIndex: 2}}>
+                <Dropdown
+                    placement="bottomRight"
+                    menu={{
+                        selectable: true,
+                        selectedKeys: [theme],
+                        onClick: ({key}) => setTheme(key as ThemeMode),
+                        items: [
+                            {
+                                key: 'light',
+                                icon: <SunOutlined/>,
+                                label: <span>{'浅色'}{theme === 'light' && <CheckOutlined style={{marginLeft: 8, color: '#6366f1', fontSize: 12}}/>}</span>,
+                            },
+                            {
+                                key: 'dark',
+                                icon: <MoonOutlined/>,
+                                label: <span>{'深色'}{theme === 'dark' && <CheckOutlined style={{marginLeft: 8, color: '#6366f1', fontSize: 12}}/>}</span>,
+                            },
+                            {
+                                key: 'system',
+                                icon: <DesktopOutlined/>,
+                                label: <span>{'跟随系统'}{theme === 'system' && <CheckOutlined style={{marginLeft: 8, color: '#6366f1', fontSize: 12}}/>}</span>,
+                            },
+                        ],
+                    }}
+                >
+                    <Button
+                        type="text"
+                        style={{color: 'var(--text-secondary)'}}
+                        icon={theme === 'light' ? <SunOutlined/> : theme === 'dark' ? <MoonOutlined/> : <DesktopOutlined/>}
+                    />
+                </Dropdown>
+            </div>
             {/* 动态背景光效 */}
             <div style={{
                 position: 'absolute', width: 600, height: 600,

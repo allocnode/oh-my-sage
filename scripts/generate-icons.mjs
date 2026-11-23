@@ -1,4 +1,4 @@
-// 从 public/icons/icon.svg 生成 PWA 图标 PNG（需要 sharp：NODE_PATH 指向含 sharp 的 node_modules 后运行 node scripts/generate-icons.mjs）
+// 从 public/icons/icon.svg 生成 PWA 图标 PNG：node scripts/generate-icons.mjs
 import sharp from 'sharp';
 import {mkdir, readFile} from 'node:fs/promises';
 import {dirname, join} from 'node:path';

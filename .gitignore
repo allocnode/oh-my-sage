@@ -10,6 +10,11 @@ coverage/
 .next/
 out/
 
+# PWA (next-pwa 构建产物，由 next build 生成)
+public/sw.js
+public/workbox-*.js
+public/sw.js.map
+
 # Production
 build/
 dist/
