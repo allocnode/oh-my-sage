@@ -3,7 +3,7 @@
 # 直接编辑本文件：把 <...> 示例值替换成你的真实值，然后：
 #   docker compose pull && docker compose up -d
 # 填好真实值后不要把本文件提交到仓库（含 API Key / 网关地址等敏感信息）。
-# 镜像由 GitHub Actions 构建推送到 Docker Hub（kevinzjyang/oh-my-sage-{mcp,web}:latest）。
+# 镜像由 GitHub Actions 构建推送到 Docker Hub（kevinzjyang/oh-my-sage-{mcp,web}:0.1.0 与 :latest）。
 #
 # 网络要求：容器需能访问局域网内的米家网关（WebSocket），
 # 并能访问公网 miot-spec.org（校验设备能力时拉取 MIOT Spec）。
@@ -11,7 +11,8 @@
 
 services:
   oh-my-sage-mcp:
-    image: kevinzjyang/oh-my-sage-mcp:latest
+    # 版本 tag 与 Actions 的 IMAGE_VERSION 保持一致；升版本时同步改这里
+    image: kevinzjyang/oh-my-sage-mcp:0.1.0
     container_name: oh-my-sage-mcp
     restart: unless-stopped
     ports:
@@ -29,7 +30,7 @@ services:
       com.centurylinklabs.watchtower.enable: "false"
 
   oh-my-sage-web:
-    image: kevinzjyang/oh-my-sage-web:latest
+    image: kevinzjyang/oh-my-sage-web:0.1.0
     container_name: oh-my-sage-web
     restart: unless-stopped
     ports:
