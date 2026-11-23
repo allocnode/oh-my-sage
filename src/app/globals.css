@@ -629,8 +629,14 @@ a:hover {
         padding: 8px 10px !important;
     }
 
-    /* 输入框字号 ≥16px，避免 iOS 聚焦缩放 */
+    /* 输入框字号 ≥16px，避免 iOS 聚焦缩放；min-height 44px 与发送按钮对齐 */
     .chat-input .ant-input {
         font-size: 16px !important;
+        min-height: 44px !important;
+    }
+
+    /* 发送/停止按钮与输入框同高对齐 */
+    .chat-input .ant-btn {
+        height: 44px !important;
     }
 }
