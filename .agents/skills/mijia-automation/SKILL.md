@@ -50,7 +50,14 @@ video → ui-sample → graph-diff → local-tested → gateway-roundtrip → ru
 
 关键规则：
 
-- 新建变量必须调用 `mijia_create_variable`；`mijia_set_variable` 只修改已存在变量，不会自动创建。
+- ⚠️ **`mijia_create_variable` 的 `type: "number"` 有 bug**：数字类型始终报"value 必须与 type 匹配"，字符串类型正常。**创建数字变量优先走 `mijia_patch_graph` 的 `variables` 参数**（规则变量声明）；`mijia_create_variable` 仅在确认是字符串变量或测试 API 行为时使用。
+- **推荐的标准做法**（数字和字符串都支持）：
+  ```
+  mijia_patch_graph (修改规则)
+    → variables: [{id: "Vxxxxxxxxxx", name: "显示名", scope: "rule", type: "number", value: 0}]
+  ```
+  ID 格式：`V` + 10 位字母数字（如 `VtestNum01`）；`scope: "rule"` 表示本规则变量。两种方式创建的变量在 UI 都正常显示（早期"变量已丢失"问题已不再复现）。
+- `mijia_set_variable` 只修改已存在变量，不会自动创建。
 - `varSetNumber`、`varSetString`、`deviceInputSetVar` 和 `deviceGetSetVar` 只写已存在变量，不能用作变量创建器。
 - 变量 ID 必须匹配 `^[a-zA-Z0-9]+$`，不能含下划线、连字符或中文；显示名称 `name` 可以包含中文。
 - `type` 只能是 `number` 或 `string`，初始值和后续值必须与类型一致。
@@ -60,8 +67,8 @@ video → ui-sample → graph-diff → local-tested → gateway-roundtrip → ru
 ### 本规则变量的作用域名与创建时机
 
 - 作用域名 = `R` + **规则 ID 的数字部分**，去掉 `graph_` 前缀。例：规则 `graph_1700000000000` → 作用域 `R1700000000000`；规则 `1700000000000` → `R1700000000000`。可用 `mijia_call_api getVarScopeList` 核对。
-- 节点里写 `"scope": "rule"` 的自动替换**只发生在** `mijia_create_graph` 和 `mijia_graph_draft_begin`（经由 `variables` 参数）。
-- **`mijia_patch_graph` 和 `mijia_update_graph` 都没有 `variables` 参数**。给已有规则新增变量时，必须先单独调用 `mijia_create_variable` 并显式传真实作用域字符串，节点里也要写真实作用域，不能写 `"rule"`。
+- 节点里写 `"scope": "rule"` 的自动替换**只发生在**带 `variables` 参数的工具里（`mijia_create_graph`、`mijia_graph_draft_begin`、`mijia_patch_graph`）。
+- **修正**：旧文档说"`mijia_patch_graph` 和 `mijia_update_graph` 都没有 `variables` 参数"**已过时**。按当前实测，`mijia_patch_graph` 支持 `variables` 并能为已有规则新增变量；`mijia_update_graph` 是否支持需按当前 MCP 版本核对。旧的"必须先单独调用 `mijia_create_variable` 并显式传真实作用域字符串"在数字变量场景**不要再走**（见上方 bug 说明）。
 
 ### 工具缺失或写入失败时
 
@@ -226,6 +233,7 @@ MCP 模式下**创建**超过 10 个节点的复杂规则时，不要调用两�
 ```json
 {"id":"$ID","type":"deviceInput","cfg":{"urn":"$URN","name":"deviceInput","version":1},"props":{"did":"$DID","siid":$SIID,"piid":$PIID,"preload":false,"dtype":"$DTYPE","operator":"=","v1":$V1},"inputs":{},"outputs":{"output":["$NEXT.trigger"]}}
 ```
+⚠️ **`deviceInput` 在状态变化时触发**：条件（如 `= true`）决定**信号值**（真/假），**不是过滤**。灯变开时发"真"，灯变关时发"假"——状态一变就发，值随条件判定。曾被误解为"只在满足条件时才触发"，导致漏掉反向状态变化。
 
 ### deviceInput - 设备触发（事件）
 ```json
@@ -302,6 +310,7 @@ MCP 模式下**创建**超过 10 个节点的复杂规则时，不要调用两�
 ```json
 {"id":"$ID","type":"logicNot","cfg":{"name":"logicNot","version":1},"props":{},"inputs":{"input":null},"outputs":{"output":["$NEXT.condition"]}}
 ```
+⚠️ **`logicNot` 语义**：当输入条件**不满足**时，`logicNot` **满足**（输出 true）。曾被理解反以为永不触发。用作"条件不成立就走这条分支"时，把 `logicNot` 接在 `condition.condition` 即可。
 
 ### loop - 循环
 ```json
@@ -342,6 +351,7 @@ MCP 模式下**创建**超过 10 个节点的复杂规则时，不要调用两�
 {"id":"$ID","type":"statusLast","cfg":{"name":"statusLast","version":1},"props":{"timeout":$MS},"inputs":{"input":null},"outputs":{"output":["$NEXT.trigger"]}}
 ```
 ⚠️ **`statusLast.input` 不能接 `signalOr.output`**：`signalOr` 只发事件脉冲，无法维持到 `timeout`，实测不会触发 `output`。`statusLast.input` 应来自**持续状态源**（如 `deviceGet.output`、`varGet.output`、`logicOr.output`、`timeRange.output` 等能维持状态的节点）。需要"多源任一持续 N 秒"时，各源先各自走 `statusLast`，再由 `signalOr` 汇聚事件；或用 `logicOr` 聚合状态后接 `statusLast.input`。
+⚠️ **`statusLast` 再次触发需要状态翻转**：输入必须**先假后真**才能再次触发。**持续为真只触发一次**。曾导致恢复路径卡死——例如"持续有人 5 分钟发提醒"只在第一次满足时发，人一直坐着不会再发；要重复提醒得让输入状态先翻回假（人离开再回来）。
 
 ### eventSequence - 事件先后发生
 ```json
@@ -375,6 +385,7 @@ MCP 模式下**创建**超过 10 个节点的复杂规则时，不要调用两�
 ```json
 {"id":"$ID","type":"varChange","cfg":{"name":"varChange","version":1},"props":{"scope":"global","id":"$VAR_ID","varType":"number","preload":true,"operator":">=","v1":$V1},"inputs":{},"outputs":{"output":["$NEXT.trigger"]}}
 ```
+⚠️ **`varChange` 在值变化时必然触发**：`between`（区间判断）等 operator 只是**卡内计算项**，**无论计算结果如何都输出信号**。曾被误解为"条件过滤"导致逻辑错误——它不做条件过滤，只是带计算的事件源。若要"只在区间内触发"，必须后接 `condition` 或 `logicAnd`/`logicOr` 做真正的过滤。
 
 ### varGet - 查询变量值
 ```json
