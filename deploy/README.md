@@ -98,7 +98,7 @@ curl -s http://<服务器 IP>:3790/healthz   # {"ok":true,...} 即启动成功
 | `MCP_AUTH_TOKEN` | MCP 客户端携带的 Bearer token，`openssl rand -hex 32` 生成 |
 | `MCP_ALLOWED_HOSTS` | 客户端访问服务器时用的主机名或 IP，逗号分隔，不带端口；缺失会导致 Host 校验返回 403 |
 | `LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY` | 网页版聊天用的 OpenAI 兼容接口（网页版服务需要） |
-| 两个服务的 `image:` | 镜像仓库名 + 版本 tag，已指向 `kevinzjyang/oh-my-sage-{mcp,web}:0.1.0`；升版本时与 Actions 的 `IMAGE_VERSION` 同步修改 |
+| 两个服务的 `image:` | 镜像仓库名 + 版本 tag，已指向 `kevinzjyang/oh-my-sage-{mcp,web}:0.1.2`；升版本时与 Actions 的 `IMAGE_VERSION` 同步修改 |
 
 镜像为多阶段构建，运行阶段只装 MCP 实际引用的依赖（约 14 MB，不含 Next.js / antd 等 Web 端依赖）。`deploy/mcp-runtime-package.mjs` 扫描编译产物生成这份最小依赖清单。
 

@@ -25,10 +25,12 @@ ENV NODE_ENV=production \
 WORKDIR /app
 
 # next start 运行只需要编译产物、运行时依赖与配置文件；src/ 已编译进 .next
+# public/ 含 PWA 图标与构建时生成的 sw.js/workbox（next-pwa），必须随镜像分发
 COPY --from=build --chown=node:node /app/package.json ./package.json
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/.next ./.next
 COPY --from=build --chown=node:node /app/next.config.js ./next.config.js
+COPY --from=build --chown=node:node /app/public ./public
 
 # 会话存储目录（SessionStore 写 process.cwd()/.sessionstore），compose 里挂卷持久化
 RUN mkdir -p .sessionstore && chown -R node:node /app
