@@ -1,7 +1,7 @@
 ---
 feature: pwa-theme
 status: in-progress
-updated: 2026-05-16
+updated: 2026-11-24
 source: feat/pwa-theme
 ---
 
@@ -60,20 +60,24 @@ source: feat/pwa-theme
 
 ## [S3] Out of Scope
 
-- 不移植 `feat/mobile-responsive` 分支的移动端改造（按用户决策，PWA 用 next-pwa 全新实现，不沿用该分支的 `sw.js`/注册组件）。
+- 基线（本地 main，含移动端改造）的布局结构与现有交互不改动；移动端仅新增顶栏主题入口。
+- 基线中由 mobile-responsive 分支带入的手写 PWA（`public/sw.js`、`PwaRegister.tsx`）按用户决策移除，由 next-pwa 取代。
 - 不做聊天/设备数据的离线缓存（API 恒实时，`NetworkOnly`）。
 - 不改后端 API 与 MCP。
 - 不做登录状态持久化（沿用现状）。
-- 不调整桌面/移动布局结构与现有交互。
 
 ## Tasks
 
-- [ ] T1: 依赖与配置——安装 `@ducanh2912/next-pwa` + `sharp`，`next.config.js` 用 `withPWA` 包装，`.gitignore` 忽略 `public/sw.js` 与 `public/workbox-*.js` — acceptance: `next build` 生成 `public/sw.js` 与 workbox 文件 (covers: S2.1)
-- [ ] T2: manifest 与图标——`manifest.ts`、`public/icons/icon.svg` + `scripts/generate-icons.mjs` 生成 192/512/180 PNG — acceptance: `next build` 产出 `/manifest.webmanifest`（standalone + 图标），图标 PNG 入库 (covers: S2.2)
-- [ ] T3: 主题基础设施——`ThemeProvider` + `useTheme`、`globals.css` 浅色变量、antd 双算法 token、layout 内联防闪烁脚本与 viewport media themeColor — acceptance: 刷新无闪烁；浅/深/跟随系统三态生效并持久化，系统模式实时跟随 (covers: S2.3, S2.4)
-- [ ] T4: 顶栏 Dropdown 切换入口 — acceptance: 顶栏右侧可切换三态，当前项勾选，图标随当前态变化 (covers: S2.5)
+- [x] T1: 依赖与配置——安装 `@ducanh2912/next-pwa` + `sharp`，`next.config.js` 用 `withPWA` 包装，`.gitignore` 忽略 `public/sw.js` 与 `public/workbox-*.js` — acceptance: `next build` 生成 `public/sw.js` 与 workbox 文件 (covers: S2.1)
+- [x] T2: manifest 与图标——`manifest.ts`、`public/icons/icon.svg` + `scripts/generate-icons.mjs` 生成 192/512/180 PNG — acceptance: `next build` 产出 `/manifest.webmanifest`（standalone + 图标），图标 PNG 入库 (covers: S2.2)
+- [x] T3: 主题基础设施——`ThemeProvider` + `useTheme`、`globals.css` 浅色变量、antd 双算法 token、layout 内联防闪烁脚本与 viewport media themeColor — acceptance: 刷新无闪烁；浅/深/跟随系统三态生效并持久化，系统模式实时跟随 (covers: S2.3, S2.4)
+- [x] T4: 切换入口——桌面顶栏与移动端紧凑顶栏 Dropdown，登录页角落同款入口 — acceptance: 三处入口可切换三态，当前项勾选，图标随当前态变化 (covers: S2.5)
 - [ ] T5: 验证与定稿——tsc / test:unit / build 全过（lint 失败标 PRE-EXISTING），独立评审，spec 收尾 — acceptance: 验证命令全部记录结果，评审无 critical (covers: S2.1–S2.5)
+- [x] T6: 基线整合——rebase 到本地 main（含移动端改造 + 手写 PWA），移除手写 PWA，合并移动端布局与主题入口 — acceptance: tsc/单测/build 通过，桌面与移动端 Playwright 实测通过 (covers: S2.1, S2.5)
+- [x] T7: Docker 镜像配套——`deploy/Dockerfile.web` 运行阶段分发 `public/`（PWA 图标与生成的 sw.js/workbox），`docker-images.yml` 版本升至 0.1.2，compose/README 版本引用同步 — acceptance: 镜像构建后 `/sw.js`、`/icons/*` 可访问；CI 将产出 `oh-my-sage-web:0.1.2` (covers: S2.1)
 
 ## Journey log
 
-None
+- rebase 到本地 main（98c9eb3，含移动端 + 手写 PWA）时，手写 PWA（`public/sw.js`、`PwaRegister.tsx`）与 next-pwa 重复：`public/sw.js` 同名冲突、`PwaRegister` 会二次注册 SW——按用户决策整体移除手写实现，图标与 `generate-icons.mjs` 保留本项目新版本（sharp 入 devDependencies，`npm run generate:icons` 可复现）。
+- `deploy/Dockerfile.web` 运行阶段原先不拷贝 `public/`：镜像里 `/sw.js` 与 `/icons/*` 全部 404，PWA 失效。已补 `COPY public/`。教训：next-pwa 构建产物在 `public/`，任何以文件系统快照方式分发 Next 产物的部署都必须包含它。
+- Next 14 的 file-based manifest（`manifest.ts` → `/manifest.webmanifest`）覆盖 `metadata.manifest` 链接，layout 里手写 manifest 链接是死配置（mobile-responsive spec 已有记录，本分支同样不写）。
