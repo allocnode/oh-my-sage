@@ -1,6 +1,6 @@
 ---
 feature: pwa-theme
-status: in-progress
+status: delivered
 updated: 2026-11-24
 source: feat/pwa-theme
 ---
@@ -8,7 +8,20 @@ source: feat/pwa-theme
 # PWA 支持 + 明暗主题切换
 
 ## Report
-[Not finalized yet]
+
+**What was built** — 网页版支持 PWA 与三态主题：
+- **PWA**：`@ducanh2912/next-pwa` 包装 next.config，自定义 runtimeCaching（`/api/` NetworkOnly、页面导航 NetworkFirst、同源静态 SWR），构建生成 `public/sw.js` + workbox；file-based `manifest.ts`（standalone + 192/512 图标）；SVG 源图标 + sharp 栅格化 PNG（`npm run generate:icons`）；layout 服务端化导出 metadata/viewport。基线中 mobile-responsive 分支的手写 PWA（sw.js/PwaRegister）按用户决策移除。
+- **三态主题**：`ThemeProvider`（localStorage `oh-my-sage-theme` + system 实时跟随 + layout 内联脚本首帧防闪烁）；antd `darkAlgorithm`/`defaultAlgorithm` 双 token 集；`globals.css` `[data-theme='light']` 变量全量覆盖；`ThemeSwitcher` 共享组件提供登录页角落、桌面顶栏、移动端紧凑顶栏三处入口（当前项勾选）。
+- **对比度修复**（评审后）：禁用主按钮弃用渐变灰化，改浅灰底+中灰文字；移动导航激活色变量化。
+- **Docker 配套**：`deploy/Dockerfile.web` 运行阶段补 `COPY public/`（镜像内 PWA 可访问）；镜像版本 0.1.1 → 0.1.2（CI/compose/README 同步）。
+
+**Verification** —
+- `npm exec tsc -- --noEmit` → PASS（多次，含 rebase 与重构后）
+- `npm run test:unit` → PASS（188 通过 / 1 跳过 / 0 失败）
+- `npm run build` → PASS（生成 `public/sw.js` + workbox + `/manifest.webmanifest`）
+- `npm run lint` → FAIL，PRE-EXISTING（LINT-RUSHSTACK-NODE24：`@rushstack/eslint-patch` 在 Node 24 下加载即抛错，与本次 diff 无关）
+- Playwright 实测（stub /api/auth|devices|sessions）：375px 移动端底部四 Tab 与移动顶栏主题入口、桌面顶栏与登录页角落三处 Dropdown 三态切换+勾选+localStorage 持久化+刷新无闪烁、SW 注册并控制页面、manifest/图标/theme-color media 分支、禁用主按钮浅色 4.26:1、导航激活态浅色 5.39:1/深色 9.65:1
+- 独立评审（general-1）：全部验收项满足、无 critical；"双勾选"观察经 DOM 实测驳回（选中项仅 1 个勾选图标）；重复 Dropdown 配置与 sider 折叠按钮浅色不可见已按观察修复（T8）
 
 ## [S1] Problem
 
@@ -72,12 +85,14 @@ source: feat/pwa-theme
 - [x] T2: manifest 与图标——`manifest.ts`、`public/icons/icon.svg` + `scripts/generate-icons.mjs` 生成 192/512/180 PNG — acceptance: `next build` 产出 `/manifest.webmanifest`（standalone + 图标），图标 PNG 入库 (covers: S2.2)
 - [x] T3: 主题基础设施——`ThemeProvider` + `useTheme`、`globals.css` 浅色变量、antd 双算法 token、layout 内联防闪烁脚本与 viewport media themeColor — acceptance: 刷新无闪烁；浅/深/跟随系统三态生效并持久化，系统模式实时跟随 (covers: S2.3, S2.4)
 - [x] T4: 切换入口——桌面顶栏与移动端紧凑顶栏 Dropdown，登录页角落同款入口 — acceptance: 三处入口可切换三态，当前项勾选，图标随当前态变化 (covers: S2.5)
-- [ ] T5: 验证与定稿——tsc / test:unit / build 全过（lint 失败标 PRE-EXISTING），独立评审，spec 收尾 — acceptance: 验证命令全部记录结果，评审无 critical (covers: S2.1–S2.5)
+- [x] T5: 验证与定稿——tsc / test:unit / build 全过（lint 失败标 PRE-EXISTING），独立评审，spec 收尾 — acceptance: 验证命令全部记录结果，评审无 critical (covers: S2.1–S2.5)
 - [x] T6: 基线整合——rebase 到本地 main（含移动端改造 + 手写 PWA），移除手写 PWA，合并移动端布局与主题入口 — acceptance: tsc/单测/build 通过，桌面与移动端 Playwright 实测通过 (covers: S2.1, S2.5)
 - [x] T7: Docker 镜像配套——`deploy/Dockerfile.web` 运行阶段分发 `public/`（PWA 图标与生成的 sw.js/workbox），`docker-images.yml` 版本升至 0.1.2，compose/README 版本引用同步 — acceptance: 镜像构建后 `/sw.js`、`/icons/*` 可访问；CI 将产出 `oh-my-sage-web:0.1.2` (covers: S2.1)
+- [x] T8: 评审跟进——抽取 `ThemeSwitcher` 共享组件收敛三处重复配置；sider 折叠按钮背景变量化；浅色模式禁用主按钮与导航激活态对比度修复 — acceptance: 重构后三处入口 Playwright 实测正常，tsc/build 通过 (covers: S2.5)
 
 ## Journey log
 
 - rebase 到本地 main（98c9eb3，含移动端 + 手写 PWA）时，手写 PWA（`public/sw.js`、`PwaRegister.tsx`）与 next-pwa 重复：`public/sw.js` 同名冲突、`PwaRegister` 会二次注册 SW——按用户决策整体移除手写实现，图标与 `generate-icons.mjs` 保留本项目新版本（sharp 入 devDependencies，`npm run generate:icons` 可复现）。
 - `deploy/Dockerfile.web` 运行阶段原先不拷贝 `public/`：镜像里 `/sw.js` 与 `/icons/*` 全部 404，PWA 失效。已补 `COPY public/`。教训：next-pwa 构建产物在 `public/`，任何以文件系统快照方式分发 Next 产物的部署都必须包含它。
 - Next 14 的 file-based manifest（`manifest.ts` → `/manifest.webmanifest`）覆盖 `metadata.manifest` 链接，layout 里手写 manifest 链接是死配置（mobile-responsive spec 已有记录，本分支同样不写）。
+- 独立评审（general-1）称 `selectable` + 手写 `CheckOutlined` 造成选中项双勾选——DOM 实测选中项仅 1 个 `.anticon-check`（antd `selectable` 只提供高亮背景），观察不成立，未改动。评审发现的三处重复 Dropdown 配置确有价值，已抽为 `ThemeSwitcher.tsx` 共享组件。
