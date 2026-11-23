@@ -619,9 +619,9 @@ a:hover {
     min-height: 0;
 }
 
-/* Sider 折叠按钮暗色 */
+/* Sider 折叠按钮 */
 .ant-layout-sider-trigger {
-    background: rgba(255, 255, 255, 0.04) !important;
+    background: var(--bg-surface-hover) !important;
     border-top: 1px solid var(--border-subtle) !important;
     color: var(--text-muted) !important;
 }

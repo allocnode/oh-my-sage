@@ -1,15 +1,15 @@
 'use client';
 
 import React, {useState, useCallback, useRef} from 'react';
-import {Layout, Typography, Space, message, Tabs, Dropdown, Button} from 'antd';
-import {RobotOutlined, HomeOutlined, ApartmentOutlined, ApiOutlined, MessageOutlined, HistoryOutlined, SunOutlined, MoonOutlined, DesktopOutlined, CheckOutlined} from '@ant-design/icons';
+import {Layout, Typography, Space, message, Tabs} from 'antd';
+import {RobotOutlined, HomeOutlined, ApartmentOutlined, ApiOutlined, MessageOutlined, HistoryOutlined} from '@ant-design/icons';
 import Chat from '@/components/Chat';
 import DevicePanel from '@/components/DevicePanel';
 import GraphPanel from '@/components/GraphPanel';
 import SessionPanel from '@/components/SessionPanel';
 import LoginPage from '@/components/LoginPage';
+import ThemeSwitcher from '@/components/ThemeSwitcher';
 import {useIsMobile} from '@/hooks/useMediaQuery';
-import {useTheme, ThemeMode} from '@/components/ThemeProvider';
 
 const {Header, Sider, Content} = Layout;
 const {Text} = Typography;
@@ -50,7 +50,6 @@ const MOBILE_TABS = [
 type MobileTabKey = (typeof MOBILE_TABS)[number]['key'];
 
 export default function HomePage() {
-    const {theme, setTheme} = useTheme();
     const [collapsed, setCollapsed] = useState(false);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [passcode, setPasscode] = useState('');
@@ -270,38 +269,7 @@ export default function HomePage() {
                         Oh My Sage
                     </span>
                     <div style={{marginLeft: 'auto'}}>
-                        <Dropdown
-                            placement="bottomRight"
-                            menu={{
-                                selectable: true,
-                                selectedKeys: [theme],
-                                onClick: ({key}) => setTheme(key as ThemeMode),
-                                items: [
-                                    {
-                                        key: 'light',
-                                        icon: <SunOutlined/>,
-                                        label: <span>{'浅色'}{theme === 'light' && <CheckOutlined style={{marginLeft: 8, color: '#6366f1', fontSize: 12}}/>}</span>,
-                                    },
-                                    {
-                                        key: 'dark',
-                                        icon: <MoonOutlined/>,
-                                        label: <span>{'深色'}{theme === 'dark' && <CheckOutlined style={{marginLeft: 8, color: '#6366f1', fontSize: 12}}/>}</span>,
-                                    },
-                                    {
-                                        key: 'system',
-                                        icon: <DesktopOutlined/>,
-                                        label: <span>{'跟随系统'}{theme === 'system' && <CheckOutlined style={{marginLeft: 8, color: '#6366f1', fontSize: 12}}/>}</span>,
-                                    },
-                                ],
-                            }}
-                        >
-                            <Button
-                                type="text"
-                                size="small"
-                                style={{color: 'var(--text-secondary)'}}
-                                icon={theme === 'light' ? <SunOutlined/> : theme === 'dark' ? <MoonOutlined/> : <DesktopOutlined/>}
-                            />
-                        </Dropdown>
+                        <ThemeSwitcher/>
                     </div>
                 </header>
 
@@ -396,38 +364,7 @@ export default function HomePage() {
                     </Text>
                 </Space>
                 <Space size={10}>
-                    <Dropdown
-                        placement="bottomRight"
-                        menu={{
-                            selectable: true,
-                            selectedKeys: [theme],
-                            onClick: ({key}) => setTheme(key as ThemeMode),
-                            items: [
-                                {
-                                    key: 'light',
-                                    icon: <SunOutlined/>,
-                                    label: <span>{'浅色'}{theme === 'light' && <CheckOutlined style={{marginLeft: 8, color: '#6366f1', fontSize: 12}}/>}</span>,
-                                },
-                                {
-                                    key: 'dark',
-                                    icon: <MoonOutlined/>,
-                                    label: <span>{'深色'}{theme === 'dark' && <CheckOutlined style={{marginLeft: 8, color: '#6366f1', fontSize: 12}}/>}</span>,
-                                },
-                                {
-                                    key: 'system',
-                                    icon: <DesktopOutlined/>,
-                                    label: <span>{'跟随系统'}{theme === 'system' && <CheckOutlined style={{marginLeft: 8, color: '#6366f1', fontSize: 12}}/>}</span>,
-                                },
-                            ],
-                        }}
-                    >
-                        <Button
-                            type="text"
-                            size="small"
-                            style={{color: 'var(--text-secondary)'}}
-                            icon={theme === 'light' ? <SunOutlined/> : theme === 'dark' ? <MoonOutlined/> : <DesktopOutlined/>}
-                        />
-                    </Dropdown>
+                    <ThemeSwitcher/>
                     <div style={{
                         width: 7,
                         height: 7,
