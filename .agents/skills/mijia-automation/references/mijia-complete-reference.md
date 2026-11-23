@@ -89,6 +89,8 @@
 2. 引用的端口名是目标节点 inputs 中声明的端口名
 3. 点分隔格式正确：`"目标节点ID.目标端口名"`
 
+**⚠️ 一个输入口只能接一条线**（硬约束）：同一个下游输入端口 `目标节点ID.端口名` 在整条规则里**只能被一个上游 `outputs` 数组指向**。多源汇聚（多个事件源触发同一节点）**必须先经过 `signalOr`（任一事件）**，再由 `signalOr.output` 单独连到目标输入。反例：`A.output` 与 `B.output` 都写 `["cond1.trigger"]` 是错误连线；正例：`A.output → or1.input0`、`B.output → or1.input1`，再由 `or1.output → cond1.trigger`。这条规则与下方"一个 output 可以连多个下游"（扇出）**不冲突**——扇出允许，扇入不允许。
+
 ### ⚠️ 网关不检查连接完整性（已验证）
 
 网关 `setGraph` **只校验节点级别结构**（字段类型、必填字段），**不校验连接级别的逻辑完整性**。以下错误都能通过网关校验但在运行时不工作：
@@ -796,6 +798,10 @@ MIOT Spec 使用的 format 值与网关要求的 dtype 不同，需要转换：
 - `props.timeout`：整数，毫秒，必须 > 0
 - 当 `input` 输入的状态持续达到 timeout 毫秒时触发 output
 
+**⚠️ `statusLast.input` 不能接 `signalOr.output`**：`signalOr` 只发事件脉冲（瞬时信号），无法维持到 `timeout`，实测不会触发 `output`。`statusLast.input` 必须来自**持续状态源**，例如 `deviceGet.output`、`varGet.output`、`logicOr.output`、`logicAnd.output`、`timeRange.output`。若需要"多源任一持续 N 秒"，两种正确做法：
+1. 各源先各自走 `statusLast`，再由 `signalOr` 汇聚事件；
+2. 用 `logicOr` 聚合状态后接 `statusLast.input`。
+
 ---
 
 ### eventSequence — 事件先后发生
@@ -988,6 +994,8 @@ deviceInput → condition1
 **⚠️ signalOr 的 inputs 值必须是 `null`**（不能是 boolean）。输入的是事件信号。
 
 **输入名格式**：必须是 `input` + 数字（如 `input0`, `input1`, `input2`...），数字必须连续。
+
+**⚠️ `signalOr` 输出不能接到 `statusLast.input`**：`signalOr` 发出的是事件脉冲，不是持续状态；`statusLast` 需要测量"状态持续时长"，脉冲无法维持到 `timeout`。语义上属错误连线，不要用 `signalOr` 喂 `statusLast`。需要"多源任一持续 N 秒"时，各源先各自走 `statusLast`，再由 `signalOr` 汇聚事件；或用 `logicOr` 聚合状态后接 `statusLast.input`。
 
 ---
 

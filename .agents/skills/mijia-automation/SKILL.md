@@ -120,6 +120,7 @@ video → ui-sample → graph-diff → local-tested → gateway-roundtrip → ru
 8. **props 必须存在**：`"props": {}` 不能省略
 9. **cfg.name**：值为节点类型名（如 `"deviceInput"`）
 10. **cfg.unit/value**：delay 节点的 `cfg.unit` 和 `cfg.value` 是可选的（UI 显示用）
+11. **一个输入口只能接一条线**：同一个下游输入端口（`目标节点ID.端口名`）在整个规则里**只能被一个上游 `outputs` 数组指向**。若需要多源汇聚（多个事件源触发同一节点），**必须先经过 `signalOr`（任一事件）**，再由 `signalOr.output` 单独连到目标输入。❌ 错误：`"output": ["cond1.trigger"]` 与另一节点的 `"output2": ["cond1.trigger"]` 同时指向 `cond1.trigger`；✅ 正确：两个源都连到 `or1.input0` / `or1.input1`，再由 `or1.output` 连到 `cond1.trigger`。
 
 ## inputs/outputs 工作机制
 
@@ -284,6 +285,7 @@ MCP 模式下**创建**超过 10 个节点的复杂规则时，不要调用两�
 {"id":"$ID","type":"signalOr","cfg":{"name":"signalOr","version":1},"props":{},"inputs":{"input0":null,"input1":null},"outputs":{"output":["$NEXT.trigger"]}}
 ```
 ⚠️ 输入名格式必须是 `input` + 连续数字（input0, input1, ...）。
+⚠️ **`signalOr` 输出不能接到 `statusLast.input`**：`signalOr` 发出的是事件脉冲，不是持续状态；`statusLast` 需要测量"状态持续时长"，脉冲无法维持到 `timeout`。语义上属错误连线，不要用 `signalOr` 喂 `statusLast`。需要"多源任一持续 N 秒"时，先各自走状态链（如 `deviceGet` → `statusLast`）再由 `signalOr` 汇聚事件，或改用 `logicOr` 提供状态给 `statusLast`。
 
 ### logicOr - 满足任一条件
 ```json
@@ -339,6 +341,7 @@ MCP 模式下**创建**超过 10 个节点的复杂规则时，不要调用两�
 ```json
 {"id":"$ID","type":"statusLast","cfg":{"name":"statusLast","version":1},"props":{"timeout":$MS},"inputs":{"input":null},"outputs":{"output":["$NEXT.trigger"]}}
 ```
+⚠️ **`statusLast.input` 不能接 `signalOr.output`**：`signalOr` 只发事件脉冲，无法维持到 `timeout`，实测不会触发 `output`。`statusLast.input` 应来自**持续状态源**（如 `deviceGet.output`、`varGet.output`、`logicOr.output`、`timeRange.output` 等能维持状态的节点）。需要"多源任一持续 N 秒"时，各源先各自走 `statusLast`，再由 `signalOr` 汇聚事件；或用 `logicOr` 聚合状态后接 `statusLast.input`。
 
 ### eventSequence - 事件先后发生
 ```json
