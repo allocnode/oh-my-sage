@@ -1,31 +1,31 @@
-# oh-my-sage MCP Server + 网页�?- Docker Compose（私有服务器 / NAS，纯镜像拉取�?
+# oh-my-sage MCP Server + 网页版 - Docker Compose（私有服务器 / NAS，纯镜像拉取）
 #
-# 直接编辑本文件：�?<...> 示例值替换成你的真实值，然后�?
+# 直接编辑本文件：把 <...> 示例值替换成你的真实值，然后：
 #   docker compose pull && docker compose up -d
-# 填好真实值后不要把本文件提交到仓库（�?API Key / 网关地址等敏感信息）�?
-# 镜像�?GitHub Actions 构建推送到 Docker Hub（kevinzjyang/oh-my-sage-{mcp,web}:0.1.1 �?:latest）�?
+# 填好真实值后不要把本文件提交到仓库（含 API Key / 网关地址等敏感信息）。
+# 镜像由 GitHub Actions 构建推送到 Docker Hub（kevinzjyang/oh-my-sage-{mcp,web}:0.1.1 与 :latest）。
 #
 # 网络要求：容器需能访问局域网内的米家网关（WebSocket），
-# 并能访问公网 miot-spec.org（校验设备能力时拉取 MIOT Spec）�?
-# 普通端口映射即可，无需 network_mode: host�?
+# 并能访问公网 miot-spec.org（校验设备能力时拉取 MIOT Spec）。
+# 普通端口映射即可，无需 network_mode: host。
 
 services:
   oh-my-sage-mcp:
-    # 版本 tag �?Actions �?IMAGE_VERSION 保持一致；升版本时同步改这�?
+    # 版本 tag 与 Actions 的 IMAGE_VERSION 保持一致；升版本时同步改这里
     image: kevinzjyang/oh-my-sage-mcp:0.1.1
     container_name: oh-my-sage-mcp
     restart: unless-stopped
     ports:
       - "3790:3790"
     environment:
-      # 米家网关局域网地址，例�?http://192.168.0.5
+      # 米家网关局域网地址，例如 http://192.168.0.5
       GATEWAY_URL: "http://<网关 IP>"
       # MCP 客户端携带的 Bearer token，openssl rand -hex 32 生成
-      MCP_AUTH_TOKEN: "<生成一个随�?token>"
+      MCP_AUTH_TOKEN: "<生成一个随机 token>"
       MCP_HTTP_HOST: 0.0.0.0
       MCP_HTTP_PORT: "3790"
-      # 监听 0.0.0.0 时必须列出客户端使用的主机名/IP，否则请求会�?Host 校验返回 403
-      MCP_ALLOWED_HOSTS: "<服务�?IP>"
+      # 监听 0.0.0.0 时必须列出客户端使用的主机名/IP，否则请求会因 Host 校验返回 403
+      MCP_ALLOWED_HOSTS: "<服务器 IP>"
     labels:
       com.centurylinklabs.watchtower.enable: "false"
 
@@ -36,7 +36,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      # 网页版聊天用�?OpenAI 兼容接口（DeepSeek 等），密钥只进容器环境、不进镜�?
+      # 网页版聊天用的 OpenAI 兼容接口（DeepSeek 等），密钥只进容器环境、不进镜像
       LLM_BASE_URL: "https://<OpenAI 兼容接口地址>"
       LLM_MODEL: "<模型名称>"
       LLM_API_KEY: "<你的 API Key>"
