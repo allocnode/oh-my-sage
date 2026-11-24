@@ -89,6 +89,8 @@
 2. 引用的端口名是目标节点 inputs 中声明的端口名
 3. 点分隔格式正确：`"目标节点ID.目标端口名"`
 
+**⚠️ 一个输入口只能接一条线**（硬约束）：同一个下游输入端口 `目标节点ID.端口名` 在整条规则里**只能被一个上游 `outputs` 数组指向**。多源汇聚（多个事件源触发同一节点）**必须先经过 `signalOr`（任一事件）**，再由 `signalOr.output` 单独连到目标输入。反例：`A.output` 与 `B.output` 都写 `["cond1.trigger"]` 是错误连线；正例：`A.output → or1.input0`、`B.output → or1.input1`，再由 `or1.output → cond1.trigger`。这条规则与下方"一个 output 可以连多个下游"（扇出）**不冲突**——扇出允许，扇入不允许。
+
 ### ⚠️ 网关不检查连接完整性（已验证）
 
 网关 `setGraph` **只校验节点级别结构**（字段类型、必填字段），**不校验连接级别的逻辑完整性**。以下错误都能通过网关校验但在运行时不工作：
@@ -447,6 +449,8 @@ MIOT Spec 使用的 format 值与网关要求的 dtype 不同，需要转换：
 | float | number |
 | string | string |
 
+**⚠️ `deviceInput` 在状态变化时触发**：条件（如 `= true`）决定**信号值**（真/假），**不是过滤**。灯变开时发"真"，灯变关时发"假"——状态一变就发，值随条件判定。曾被误解为"只在满足条件时才触发"，导致漏掉反向状态变化（如只想要"开灯"事件却把"关灯"也当触发源）。
+
 #### 模式B：事件触发（eiid）
 
 当设备发生某个事件时触发。
@@ -796,6 +800,12 @@ MIOT Spec 使用的 format 值与网关要求的 dtype 不同，需要转换：
 - `props.timeout`：整数，毫秒，必须 > 0
 - 当 `input` 输入的状态持续达到 timeout 毫秒时触发 output
 
+**⚠️ `statusLast.input` 不能接 `signalOr.output`**：`signalOr` 只发事件脉冲（瞬时信号），无法维持到 `timeout`，实测不会触发 `output`。`statusLast.input` 必须来自**持续状态源**，例如 `deviceGet.output`、`varGet.output`、`logicOr.output`、`logicAnd.output`、`timeRange.output`。若需要"多源任一持续 N 秒"，两种正确做法：
+1. 各源先各自走 `statusLast`，再由 `signalOr` 汇聚事件；
+2. 用 `logicOr` 聚合状态后接 `statusLast.input`。
+
+**⚠️ `statusLast` 再次触发需要状态翻转**：输入必须**先假后真**才能再次触发。**持续为真只触发一次**。曾导致恢复路径卡死——例如"持续有人 5 分钟发提醒"只在第一次满足时发，人一直坐着不会再发；要重复提醒得让输入状态先翻回假（人离开再回来）。设计恢复路径时务必先想清楚"状态何时翻回假"。
+
 ---
 
 ### eventSequence — 事件先后发生
@@ -989,6 +999,8 @@ deviceInput → condition1
 
 **输入名格式**：必须是 `input` + 数字（如 `input0`, `input1`, `input2`...），数字必须连续。
 
+**⚠️ `signalOr` 输出不能接到 `statusLast.input`**：`signalOr` 发出的是事件脉冲，不是持续状态；`statusLast` 需要测量"状态持续时长"，脉冲无法维持到 `timeout`。语义上属错误连线，不要用 `signalOr` 喂 `statusLast`。需要"多源任一持续 N 秒"时，各源先各自走 `statusLast`，再由 `signalOr` 汇聚事件；或用 `logicOr` 聚合状态后接 `statusLast.input`。
+
 ---
 
 ### logicOr — 满足任一条件
@@ -1037,6 +1049,8 @@ deviceInput → condition1
 
 - `inputs.input`：`boolean | null`
 - 输出为输入状态的取反
+
+**⚠️ `logicNot` 语义**：当输入条件**不满足**时，`logicNot` **满足**（输出 true）。曾被理解反以为永不触发。用作"条件不成立就走这条分支"时，把 `logicNot` 接在 `condition.condition` 即可。
 
 ---
 
@@ -1111,6 +1125,26 @@ deviceInput → condition1
 ---
 
 ## 变量类节点
+
+**⚠️ 变量创建方式选择（实测踩坑）**：
+
+| 创建方式 | number（数字） | string（字符串） | UI 显示 |
+|----------|---------------|-----------------|---------|
+| `mijia_create_variable`（API 创建变量） | ❌ 报"value 必须与 type 匹配" | ✅ 成功 | ✅ 正常显示 |
+| `mijia_patch_graph`（规则变量声明 `variables`） | ✅ 成功 | ✅ 成功 | ✅ 正常显示 |
+
+**两个结论**：
+1. `mijia_create_variable` 的 `type: "number"` 有 bug——数字类型始终报"value 必须与 type 匹配"，字符串类型正常。**创建数字变量请用 `mijia_patch_graph` 的 `variables` 参数**。
+2. 早期"变量已丢失"问题已解决——现在无论哪种方式创建，UI 都正常显示。之前可能是命名格式、缓存或网关版本差异导致，现已不再复现。
+
+**标准做法**：
+```
+mijia_patch_graph (修改规则)
+  → variables: [{id: "Vxxxxxxxxxx", name: "显示名", scope: "rule", type: "number", value: 0}]
+```
+- ID 格式：`V` + 10 位字母数字（如 `VtestNum01`）
+- `scope: "rule"` 表示本规则变量
+- 数字和字符串都支持
 
 ### deviceInputSetVar — 设备触发赋值
 
@@ -1226,6 +1260,8 @@ deviceInput → condition1
 | v1 | number/string | 比较值 |
 | v2 | number | 仅 `between` 时需要 |
 
+**⚠️ `varChange` 在值变化时必然触发**：`between`（区间判断）等 operator 只是**卡内计算项**，**无论计算结果如何都输出信号**。曾被误解为"条件过滤"导致逻辑错误——它不做条件过滤，只是带计算的事件源。若要"只在区间内触发"，必须后接 `condition` 或 `logicAnd`/`logicOr` 做真正的过滤。
+
 ---
 
 ### varGet — 查询变量值
@@ -1283,23 +1319,58 @@ deviceInput → condition1
 
 **支持的运算符**：`+`, `-`, `*`, `/`, `%`
 
-**支持的函数**：
+**支持的函数（26 个）**：
 
-| 函数 | 参数个数 | 说明 |
-|------|----------|------|
-| abs(x) | 1 | 绝对值 |
-| pow(x,y) | 2 | 幂 |
-| log(x,y) | 2 | 对数 |
-| sin/cos/tan | 1 | 三角函数 |
-| asin/acos/atan | 1 | 反三角函数 |
-| max/min | ≥1 | 最大/最小值 |
-| round/floor/ceil | 1 | 取整 |
-| rand() | 0 | 随机数 |
-| randint(a,b) | 2 | 随机整数 |
-| now() | 0 | 当前时间戳 |
-| year/month/date/day | 0 | 日期 |
-| hours/minutes/seconds | 0 | 时间 |
-| pi()/e() | 0 | 数学常量 |
+*数学（8 个）*
+
+| 函数 | 参数 | 说明 |
+|------|------|------|
+| `abs(x)` | 1 数值 | 绝对值 |
+| `pow(x, y)` | 2（底数, 指数） | x 的 y 次方 |
+| `log(x, y)` | 2（底数, 值） | 以 x 为底 y 的对数 |
+| `max(x0, x1, ...)` | 可变（≥1） | 取最大值；单参数可正常保存（等价恒等） |
+| `min(x0, x1, ...)` | 可变（≥1） | 取最小值；单参数可正常保存（等价恒等） |
+| `round(x)` | 1 数值 | 四舍五入取整 |
+| `floor(x)` | 1 数值 | 向下取整 |
+| `ceil(x)` | 1 数值 | 向上取整 |
+
+*三角（6 个）— 全部使用弧度*
+
+| 函数 | 参数 | 说明 |
+|------|------|------|
+| `sin(x)` | 1（弧度） | 正弦 |
+| `cos(x)` | 1（弧度） | 余弦 |
+| `tan(x)` | 1（弧度） | 正切 |
+| `asin(x)` | 1 | 反正弦（返回弧度） |
+| `acos(x)` | 1 | 反余弦（返回弧度） |
+| `atan(x)` | 1 | 反正切（返回弧度） |
+
+*时间（8 个）*
+
+| 函数 | 返回 | 范围 |
+|------|------|------|
+| `now()` | 当前时间戳 | 毫秒（ms） |
+| `year()` | 当前年 | 如 2026 |
+| `month()` | 当前月 | 1~12 |
+| `date()` | 当前日期（月内第几天） | 从 1 开始 |
+| `day()` | 当前星期 | **0~6，0 = 周日，6 = 周六** |
+| `hours()` | 当前小时 | 0~23 |
+| `minutes()` | 当前分钟 | 0~59 |
+| `seconds()` | 当前秒 | 0~59 |
+
+*随机（2 个）*
+
+| 函数 | 返回 | 范围 |
+|------|------|------|
+| `rand()` | 随机数 | 0 ≤ x < 1（小数） |
+| `randint(x, y)` | 随机整数 | x ~ y（**包含端点**） |
+
+*常量（2 个）*
+
+| 函数 | 值 |
+|------|-----|
+| `e()` | ≈ 2.71828 |
+| `pi()` | ≈ 3.14159 |
 
 ---
 
